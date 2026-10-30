@@ -1,0 +1,467 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>서버 모니터 관리자</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --panel: #fff; --text: #1d2127; --muted: #6b7280; --border: #e3e6ea;
+    --accent: #2563eb; --accent-text: #fff; --hover: #f0f2f5;
+    --ok: #15803d; --ok-bg: #dcfce7; --warn: #a16207; --warn-bg: #fef3c7;
+    --crit: #b91c1c; --crit-bg: #fee2e2; --gray: #4b5563; --gray-bg: #e5e7eb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111418; --panel: #1a1e24; --text: #e5e7eb; --muted: #9ca3af; --border: #2c323a;
+      --accent: #3b82f6; --hover: #22272e;
+      --ok: #4ade80; --ok-bg: #14341f; --warn: #facc15; --warn-bg: #3a300f;
+      --crit: #f87171; --crit-bg: #3f1616; --gray: #d1d5db; --gray-bg: #2c323a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.5 system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif; }
+  header { display: flex; align-items: center; gap: 12px; padding: 14px 24px;
+           background: var(--panel); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  header h1 { font-size: 18px; margin: 0; margin-right: auto; }
+  main { max-width: 1400px; margin: 0 auto; padding: 20px 24px 60px; }
+  h2 { font-size: 16px; margin: 0; }
+  .muted { color: var(--muted); }
+  .small { font-size: 12px; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .card .label { color: var(--muted); font-size: 12px; }
+  .card .value { font-size: 26px; font-weight: 600; margin-top: 2px; }
+  .card .value.crit { color: var(--crit); } .card .value.warn { color: var(--warn); }
+  .card .value.ok { color: var(--ok); } .card .value.gray { color: var(--gray); }
+
+  section { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 20px; }
+  .section-head { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .section-head h2 { margin-right: auto; }
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 9px 12px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { font-size: 12px; color: var(--muted); font-weight: 500; white-space: nowrap; }
+  tbody tr:hover { background: var(--hover); }
+  tbody tr:last-child td { border-bottom: none; }
+  tr.selected { background: var(--hover); }
+  td.actions { white-space: nowrap; }
+  .empty { padding: 28px; text-align: center; color: var(--muted); }
+  .msg { max-width: 520px; word-break: break-all; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+  .err { color: var(--crit); font-size: 12px; max-width: 320px; word-break: break-all; }
+  .clickable { cursor: pointer; }
+
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 500; white-space: nowrap; }
+  .b-ok { color: var(--ok); background: var(--ok-bg); }
+  .b-warning { color: var(--warn); background: var(--warn-bg); }
+  .b-critical { color: var(--crit); background: var(--crit-bg); }
+  .b-unreachable, .b-unknown, .b-disabled { color: var(--gray); background: var(--gray-bg); }
+  .tag { display: inline-block; padding: 0 6px; margin: 1px 2px 1px 0; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; color: var(--muted); }
+
+  button, select, input, textarea { font: inherit; color: var(--text); }
+  button { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 5px 10px; cursor: pointer; }
+  button:hover { background: var(--hover); }
+  button:disabled { opacity: .5; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  button.danger { color: var(--crit); }
+  button.sm { padding: 2px 8px; font-size: 12px; }
+  select, input, textarea { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; }
+  textarea { width: 100%; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+  label.inline { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+
+  dialog { border: 1px solid var(--border); border-radius: 12px; background: var(--panel); color: var(--text); padding: 0; width: min(560px, calc(100vw - 32px)); }
+  dialog::backdrop { background: rgba(0,0,0,.4); }
+  dialog form { padding: 20px; display: grid; gap: 12px; }
+  dialog .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  dialog label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+  dialog input, dialog select { width: 100%; }
+  dialog .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+
+  #toasts { position: fixed; right: 16px; bottom: 16px; display: grid; gap: 8px; z-index: 10; }
+  .toast { background: var(--panel); border: 1px solid var(--border); border-left: 4px solid var(--accent); border-radius: 8px;
+           padding: 10px 14px; box-shadow: 0 4px 16px rgba(0,0,0,.15); max-width: 420px; word-break: break-all; }
+  .toast.error { border-left-color: var(--crit); }
+  .toast.success { border-left-color: var(--ok); }
+
+  @media (max-width: 640px) {
+    header, main { padding-left: 16px; padding-right: 16px; }
+    dialog .row { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>서버 모니터 관리자</h1>
+  <span class="muted small" id="updated"></span>
+  <label class="inline"><input type="checkbox" id="auto" checked> 10초마다 자동 새로고침</label>
+  <button id="refresh">새로고침</button>
+</header>
+
+<main>
+  <div class="cards" id="cards"></div>
+
+  <section>
+    <div class="section-head">
+      <h2>서버</h2>
+      <button class="primary" id="add-server">+ 서버 추가</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>이름</th><th>주소</th><th>상태</th><th>태그</th><th>수집 소스</th>
+          <th>마지막 수집</th><th>오류</th><th>작업</th>
+        </tr></thead>
+        <tbody id="servers"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <h2>이벤트</h2>
+      <select id="f-server"><option value="">전체 서버</option></select>
+      <select id="f-severity">
+        <option value="">전체 심각도</option><option value="critical">critical</option><option value="warning">warning</option>
+      </select>
+      <select id="f-category">
+        <option value="">전체 분류</option><option value="hardware">하드웨어</option><option value="server_error">서버 오류</option>
+      </select>
+      <select id="f-ack">
+        <option value="false">미확인</option><option value="true">확인됨</option><option value="">전체</option>
+      </select>
+      <input id="f-q" type="search" placeholder="제목/메시지 검색">
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>심각도</th><th>서버</th><th>분류</th><th>제목</th><th>메시지</th>
+          <th>횟수</th><th>최초 발생</th><th>최근 발생</th><th></th>
+        </tr></thead>
+        <tbody id="events"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<dialog id="server-dialog">
+  <form method="dialog" id="server-form">
+    <h2 id="dialog-title">서버 추가</h2>
+    <div class="row">
+      <label>이름 <input name="name" required maxlength="100"></label>
+      <label>호스트 <input name="host" required placeholder="10.0.0.11"></label>
+    </div>
+    <div class="row">
+      <label>포트 <input name="port" type="number" value="22" min="1" max="65535" required></label>
+      <label>사용자 <input name="username" value="monitor" required></label>
+    </div>
+    <div class="row">
+      <label>인증 방식
+        <select name="auth_type"><option value="key">SSH 개인키</option><option value="password">비밀번호</option></select>
+      </label>
+      <label>태그 (쉼표로 구분) <input name="tags" placeholder="web, prod"></label>
+    </div>
+    <label><span id="secret-label">개인키</span>
+      <textarea name="secret" rows="6" placeholder="-----BEGIN OPENSSH PRIVATE KEY-----"></textarea>
+      <span class="small" id="secret-hint"></span>
+    </label>
+    <label class="inline"><input type="checkbox" name="enabled" checked> 수집 활성화</label>
+    <div class="buttons">
+      <button type="button" id="dialog-cancel">취소</button>
+      <button type="submit" class="primary" id="dialog-save">저장</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toasts"></div>
+
+<script>
+const $ = (sel) => document.querySelector(sel);
+const STATUS_LABEL = { ok: "정상", warning: "경고", critical: "심각", unreachable: "접속 불가", unknown: "미확인" };
+const CATEGORY_LABEL = { hardware: "하드웨어", server_error: "서버 오류" };
+
+let servers = [];
+let editingId = null;
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function fmtTime(iso) {
+  if (!iso) return "-";
+  const d = new Date(iso);
+  const sec = Math.round((Date.now() - d) / 1000);
+  let rel;
+  if (sec < 60) rel = `${Math.max(sec, 0)}초 전`;
+  else if (sec < 3600) rel = `${Math.floor(sec / 60)}분 전`;
+  else if (sec < 86400) rel = `${Math.floor(sec / 3600)}시간 전`;
+  else rel = `${Math.floor(sec / 86400)}일 전`;
+  return `<span title="${esc(d.toLocaleString())}">${rel}</span>`;
+}
+
+function toast(text, kind = "") {
+  const el = document.createElement("div");
+  el.className = `toast ${kind}`;
+  el.textContent = text;
+  $("#toasts").append(el);
+  setTimeout(() => el.remove(), kind === "error" ? 8000 : 4000);
+}
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, {
+    ...opts,
+    headers: opts.body ? { "Content-Type": "application/json" } : undefined,
+  });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const body = await res.json();
+      detail = typeof body.detail === "string" ? body.detail : body.detail.map((d) => d.msg).join(", ");
+    } catch {}
+    throw new Error(`${res.status}: ${detail}`);
+  }
+  return res.status === 204 ? null : res.json();
+}
+
+// ---------- 요약 ----------
+function renderSummary(s) {
+  const st = s.servers_by_status, sev = s.open_events_by_severity, cat = s.open_events_by_category;
+  const cards = [
+    ["전체 서버", s.servers_total, ""],
+    ["정상", st.ok || 0, "ok"],
+    ["경고", st.warning || 0, "warn"],
+    ["심각", st.critical || 0, "crit"],
+    ["접속 불가", st.unreachable || 0, "gray"],
+    ["미확인 critical 이벤트", sev.critical || 0, "crit"],
+    ["미확인 warning 이벤트", sev.warning || 0, "warn"],
+    ["하드웨어 / 서버 오류", `${cat.hardware || 0} / ${cat.server_error || 0}`, ""],
+  ];
+  $("#cards").innerHTML = cards
+    .map(([label, value, cls]) => `<div class="card"><div class="label">${label}</div><div class="value ${cls}">${value}</div></div>`)
+    .join("");
+}
+
+// ---------- 서버 ----------
+function statusBadge(s) {
+  if (!s.enabled) return `<span class="badge b-disabled">비활성</span>`;
+  return `<span class="badge b-${esc(s.status)}">${STATUS_LABEL[s.status] || esc(s.status)}</span>`;
+}
+
+function renderServers() {
+  const selected = $("#f-server").value;
+  const tbody = $("#servers");
+  if (!servers.length) {
+    tbody.innerHTML = `<tr><td colspan="8" class="empty">등록된 서버가 없습니다. "서버 추가"로 등록하세요.</td></tr>`;
+  } else {
+    tbody.innerHTML = servers.map((s) => `
+      <tr data-id="${s.id}" class="${String(s.id) === selected ? "selected" : ""}">
+        <td><a href="#" class="clickable" data-act="filter" title="이 서버의 이벤트만 보기"><b>${esc(s.name)}</b></a></td>
+        <td>${esc(s.username)}@${esc(s.host)}:${s.port}<br><span class="small muted">${s.auth_type === "key" ? "키 인증" : "비밀번호"}${s.host_key_pinned ? " · 호스트 키 고정됨" : ""}</span></td>
+        <td>${statusBadge(s)}</td>
+        <td>${s.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("") || '<span class="muted">-</span>'}</td>
+        <td class="small">${s.capabilities.map(esc).join("<br>") || '<span class="muted">미탐지</span>'}</td>
+        <td>${fmtTime(s.last_collected_at)}</td>
+        <td>${s.last_error ? `<div class="err">${esc(s.last_error)}</div><span class="small muted">연속 실패 ${s.consecutive_failures}회</span>` : '<span class="muted">-</span>'}</td>
+        <td class="actions">
+          <button class="sm" data-act="test">연결 테스트</button>
+          <button class="sm" data-act="edit">수정</button>
+          <button class="sm" data-act="toggle">${s.enabled ? "비활성화" : "활성화"}</button>
+          ${s.host_key_pinned ? '<button class="sm" data-act="reset-key">호스트 키 초기화</button>' : ""}
+          <button class="sm danger" data-act="delete">삭제</button>
+        </td>
+      </tr>`).join("");
+  }
+
+  const sel = $("#f-server");
+  sel.innerHTML = `<option value="">전체 서버</option>` +
+    servers.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join("");
+  sel.value = servers.some((s) => String(s.id) === selected) ? selected : "";
+}
+
+$("#servers").addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-act]");
+  if (!btn) return;
+  e.preventDefault();
+  const id = Number(btn.closest("tr").dataset.id);
+  const s = servers.find((x) => x.id === id);
+  const act = btn.dataset.act;
+
+  if (act === "filter") {
+    $("#f-server").value = $("#f-server").value === String(id) ? "" : String(id);
+    renderServers();
+    return loadEvents();
+  }
+  if (act === "edit") return openDialog(s);
+
+  btn.disabled = true;
+  try {
+    if (act === "test") {
+      const r = await api(`/api/servers/${id}/test`, { method: "POST" });
+      if (r.ok) toast(`${s.name}: 연결 성공 (${r.capabilities.join(", ") || "수집 소스 없음"})`, "success");
+      else toast(`${s.name}: 연결 실패 - ${r.error}`, "error");
+    } else if (act === "toggle") {
+      await api(`/api/servers/${id}`, { method: "PATCH", body: JSON.stringify({ enabled: !s.enabled }) });
+      toast(`${s.name}: ${s.enabled ? "비활성화" : "활성화"}했습니다`, "success");
+    } else if (act === "reset-key") {
+      if (!confirm(`${s.name}의 고정된 호스트 키를 초기화할까요?\nOS 재설치 등으로 키가 정상적으로 바뀐 경우에만 하세요. 다음 접속 때 새 키가 고정됩니다.`)) return;
+      await api(`/api/servers/${id}/reset-host-key`, { method: "POST" });
+      toast(`${s.name}: 호스트 키를 초기화했습니다`, "success");
+    } else if (act === "delete") {
+      if (!confirm(`${s.name} 서버를 삭제할까요?\n이 서버의 이벤트도 함께 삭제됩니다.`)) return;
+      await api(`/api/servers/${id}`, { method: "DELETE" });
+      toast(`${s.name}: 삭제했습니다`, "success");
+    }
+    await refresh();
+  } catch (err) {
+    toast(err.message, "error");
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// ---------- 서버 추가/수정 ----------
+const dialog = $("#server-dialog");
+const form = $("#server-form");
+
+function updateSecretLabel() {
+  const isKey = form.auth_type.value === "key";
+  $("#secret-label").textContent = isKey ? "개인키" : "비밀번호";
+  form.secret.rows = isKey ? 6 : 1;
+  form.secret.placeholder = isKey ? "-----BEGIN OPENSSH PRIVATE KEY-----" : "";
+}
+form.auth_type.addEventListener("change", updateSecretLabel);
+
+function openDialog(s = null) {
+  editingId = s ? s.id : null;
+  form.reset();
+  $("#dialog-title").textContent = s ? `서버 수정: ${s.name}` : "서버 추가";
+  if (s) {
+    for (const k of ["name", "host", "port", "username", "auth_type"]) form[k].value = s[k];
+    form.tags.value = s.tags.join(", ");
+    form.enabled.checked = s.enabled;
+  }
+  form.secret.required = !s;
+  $("#secret-hint").textContent = s ? "비워 두면 기존 인증정보를 유지합니다." : "암호화되어 저장되며 다시 조회할 수 없습니다.";
+  updateSecretLabel();
+  dialog.showModal();
+}
+
+$("#add-server").addEventListener("click", () => openDialog());
+$("#dialog-cancel").addEventListener("click", () => dialog.close());
+
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const body = {
+    name: form.name.value.trim(),
+    host: form.host.value.trim(),
+    port: Number(form.port.value),
+    username: form.username.value.trim(),
+    auth_type: form.auth_type.value,
+    tags: form.tags.value.split(",").map((t) => t.trim()).filter(Boolean),
+    enabled: form.enabled.checked,
+  };
+  let secret = form.secret.value.replace(/\r/g, "");
+  if (body.auth_type === "key" && secret.trim()) secret = secret.trim() + "\n";
+  if (secret) body.secret = secret;
+
+  const save = $("#dialog-save");
+  save.disabled = true;
+  try {
+    if (editingId) {
+      await api(`/api/servers/${editingId}`, { method: "PATCH", body: JSON.stringify(body) });
+      toast(`${body.name}: 수정했습니다`, "success");
+      dialog.close();
+    } else {
+      const created = await api("/api/servers", { method: "POST", body: JSON.stringify(body) });
+      dialog.close();
+      toast(`${body.name}: 등록했습니다. 연결을 테스트하는 중...`);
+      const r = await api(`/api/servers/${created.id}/test`, { method: "POST" });
+      if (r.ok) toast(`${body.name}: 연결 성공 (${r.capabilities.join(", ") || "수집 소스 없음"})`, "success");
+      else toast(`${body.name}: 연결 실패 - ${r.error}`, "error");
+    }
+    await refresh();
+  } catch (err) {
+    toast(err.message, "error");
+  } finally {
+    save.disabled = false;
+  }
+});
+
+// ---------- 이벤트 ----------
+async function loadEvents() {
+  const params = new URLSearchParams({ limit: "200" });
+  const map = { server_id: "#f-server", severity: "#f-severity", category: "#f-category", acknowledged: "#f-ack", q: "#f-q" };
+  for (const [k, sel] of Object.entries(map)) {
+    const v = $(sel).value.trim();
+    if (v) params.set(k, v);
+  }
+  const events = await api(`/api/events?${params}`);
+  const tbody = $("#events");
+  if (!events.length) {
+    tbody.innerHTML = `<tr><td colspan="9" class="empty">조건에 맞는 이벤트가 없습니다.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = events.map((ev) => `
+    <tr data-id="${ev.id}">
+      <td><span class="badge b-${esc(ev.severity)}">${esc(ev.severity)}</span></td>
+      <td>${esc(ev.server_name)}</td>
+      <td>${CATEGORY_LABEL[ev.category] || esc(ev.category)}<br><span class="small muted">${esc(ev.rule_id)}</span></td>
+      <td>${esc(ev.title)}<br><span class="small muted">${esc(ev.source)}</span></td>
+      <td><div class="msg">${esc(ev.message)}</div></td>
+      <td>${ev.count}</td>
+      <td>${fmtTime(ev.first_seen)}</td>
+      <td>${fmtTime(ev.last_seen)}</td>
+      <td class="actions">${ev.acknowledged ? '<span class="muted small">확인됨</span>' : '<button class="sm" data-act="ack">확인</button>'}</td>
+    </tr>`).join("");
+}
+
+$("#events").addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-act=ack]");
+  if (!btn) return;
+  btn.disabled = true;
+  try {
+    await api(`/api/events/${btn.closest("tr").dataset.id}/ack`, { method: "POST" });
+    await refresh();
+  } catch (err) {
+    toast(err.message, "error");
+    btn.disabled = false;
+  }
+});
+
+for (const sel of ["#f-server", "#f-severity", "#f-category", "#f-ack"]) {
+  $(sel).addEventListener("change", () => { renderServers(); loadEvents().catch((e) => toast(e.message, "error")); });
+}
+let qTimer;
+$("#f-q").addEventListener("input", () => {
+  clearTimeout(qTimer);
+  qTimer = setTimeout(() => loadEvents().catch((e) => toast(e.message, "error")), 300);
+});
+
+// ---------- 새로고침 ----------
+let refreshing = false;
+async function refresh() {
+  if (refreshing) return;
+  refreshing = true;
+  try {
+    const [summary, list] = await Promise.all([api("/api/summary"), api("/api/servers")]);
+    servers = list;
+    renderSummary(summary);
+    renderServers();
+    await loadEvents();
+    $("#updated").textContent = `마지막 갱신 ${new Date().toLocaleTimeString()}`;
+  } catch (err) {
+    toast(`데이터를 불러오지 못했습니다: ${err.message}`, "error");
+  } finally {
+    refreshing = false;
+  }
+}
+
+$("#refresh").addEventListener("click", refresh);
+setInterval(() => {
+  if ($("#auto").checked && !dialog.open && !document.hidden) refresh();
+}, 10000);
+refresh();
+</script>
+</body>
+</html>
