@@ -1,0 +1,8 @@
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+sqlalchemy[asyncio]==2.0.36
+asyncpg==0.30.0
+pydantic-settings==2.7.1
+asyncssh==2.19.0
+cryptography==44.0.0
+PyYAML==6.0.2

@@ -1,0 +1,43 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: monitor
+      POSTGRES_PASSWORD: monitor
+      POSTGRES_DB: monitor
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U monitor"]
+      interval: 3s
+      retries: 20
+
+  api:
+    build: ./backend
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://monitor:monitor@db:5432/monitor
+    ports: ["8000:8000"]
+    depends_on:
+      db: { condition: service_healthy }
+
+  collector:
+    build: ./backend
+    command: ["python", "-m", "app.collector.runner"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://monitor:monitor@db:5432/monitor
+      # scale out: run more collector services with WORKER_INDEX=0..N-1, WORKER_COUNT=N
+      WORKER_INDEX: 0
+      WORKER_COUNT: 1
+    depends_on:
+      db: { condition: service_healthy }
+
+  # Fake Linux targets for local testing: `docker compose --profile test up`
+  target1: &target
+    profiles: [test]
+    build: ./deploy/test-targets
+    volumes: [./deploy/test-targets/keys/id_ed25519.pub:/authorized_keys:ro]
+  target2: *target
+
+volumes:
+  pgdata:

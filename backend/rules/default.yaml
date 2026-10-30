@@ -1,0 +1,86 @@
+# Rules are evaluated in order; the first match wins.
+# Fields: id, title, category (server_error|hardware), severity (critical|warning|info),
+#         pattern (Python regex, case-insensitive), sources (optional list; prefix match,
+#         so "file" matches "file:/var/log/syslog").
+rules:
+  # --- hardware: disk ---
+  - id: disk.io_error
+    title: 디스크 I/O 오류
+    category: hardware
+    severity: critical
+    pattern: '(Buffer I/O error|blk_update_request: (I/O|critical) error|I/O error, dev \w+)'
+  - id: disk.ata_error
+    title: ATA/SCSI 장치 오류
+    category: hardware
+    severity: critical
+    pattern: '(ata\d+(\.\d+)?: (exception|failed command|status: \{ DRDY ERR)|SCSI error|Medium Error|UNC\b)'
+  - id: disk.smart
+    title: SMART 디스크 경고
+    category: hardware
+    severity: critical
+    pattern: '(smartd.*(FAILED|failing|Prefailure|Currently unreadable|Offline uncorrectable))'
+  - id: fs.error
+    title: 파일시스템 오류
+    category: server_error
+    severity: critical
+    pattern: '((EXT4|XFS|BTRFS)(-fs)? \(?\w*\)?:? ?(error|corruption|Corruption)|Remounting filesystem read-only)'
+  - id: raid.degraded
+    title: RAID 성능저하(degraded)
+    category: hardware
+    severity: critical
+    pattern: '(md/raid\d*:.*(degraded|Disk failure)|RAID.*degraded)'
+
+  # --- hardware: memory / cpu ---
+  - id: mem.ecc_uncorrectable
+    title: 메모리 ECC 정정불가 오류
+    category: hardware
+    severity: critical
+    pattern: '(EDAC.*\b(UE|uncorrectable)\b|Uncorrected error)'
+  - id: mem.ecc_correctable
+    title: 메모리 ECC 정정 오류
+    category: hardware
+    severity: warning
+    pattern: '(EDAC.*\b(CE|corrected)\b|Corrected error)'
+  - id: cpu.mce
+    title: CPU Machine Check 오류
+    category: hardware
+    severity: critical
+    pattern: '(Machine check events logged|\bmce: \[Hardware Error\]|\[Hardware Error\])'
+  - id: cpu.thermal
+    title: CPU 과열/스로틀링
+    category: hardware
+    severity: warning
+    pattern: '(temperature above threshold|cpu clock throttled|Package temperature)'
+
+  # --- server errors ---
+  - id: mem.oom
+    title: 메모리 부족(OOM Kill)
+    category: server_error
+    severity: critical
+    pattern: '(Out of memory|oom-kill|oom_reaper|Killed process \d+)'
+  - id: kernel.panic
+    title: 커널 패닉/버그
+    category: server_error
+    severity: critical
+    pattern: '(Kernel panic|BUG: |general protection fault|soft lockup|hung_task|blocked for more than \d+ seconds)'
+  - id: proc.segfault
+    title: 프로세스 Segfault
+    category: server_error
+    severity: warning
+    pattern: '(segfault at|core dumped)'
+  - id: net.link_down
+    title: 네트워크 링크 다운
+    category: hardware
+    severity: warning
+    pattern: '(NIC Link is Down|Link is Down|link down)'
+  - id: service.failed
+    title: 서비스 실패
+    category: server_error
+    severity: warning
+    sources: [systemd]
+    pattern: '.'
+  - id: service.failed_log
+    title: 서비스 실패
+    category: server_error
+    severity: warning
+    pattern: '(Failed to start|Main process exited, code=exited, status=[1-9]|entered failed state)'

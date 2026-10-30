@@ -1,0 +1,16 @@
+# 비밀 정보
+.env
+deploy/test-targets/keys/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+
+# 편집기 / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
