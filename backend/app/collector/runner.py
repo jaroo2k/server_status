@@ -12,15 +12,28 @@ import time
 from sqlalchemy import select
 
 from app.analyzer.rule_engine import RuleEngine, load_rules
-from app.analyzer.store import compute_status, upsert_findings
+from app.analyzer.store import (
+    apply_source_run,
+    compute_status,
+    load_source_rows,
+    select_active,
+    summarize_failures,
+    upsert_findings,
+)
 from app.collector.capabilities import DETECT_SCRIPT, parse_capabilities
 from app.collector.sources import sources_for
+from app.collector.sources.base import CommandResult
 from app.collector.ssh_pool import HostKeyChanged, SSHPool, run_command
+from app.collector.tracking import TrackingRunner
 from app.core.config import settings
 from app.core.db import SessionLocal, init_db
-from app.models import CollectorState, Server, utcnow
+from app.models import CollectorState, Server, SourceStatus, utcnow
 
 log = logging.getLogger("collector")
+
+
+def _elapsed_ms(started: float) -> int:
+    return int((time.monotonic() - started) * 1000)
 
 
 class Collector:
@@ -71,11 +84,11 @@ class Collector:
                 if host_key and not server.host_key:
                     server.host_key = host_key
 
-                async def run(cmd: str) -> tuple[int, str]:
+                async def run(cmd: str) -> CommandResult:
                     return await run_command(conn, cmd)
 
                 if not server.capabilities:
-                    server.capabilities = parse_capabilities((await run(DETECT_SCRIPT))[1])
+                    server.capabilities = parse_capabilities((await run(DETECT_SCRIPT)).stdout)
 
                 due = [
                     s
@@ -87,13 +100,48 @@ class Collector:
                     if st is None:
                         st = CollectorState(server_id=server.id, source=src.name, state={})
                         session.add(st)
-                    result = await src.collect(run, dict(st.state or {}))
+                    status = await session.get(SourceStatus, (server.id, src.name))
+                    if status is None:
+                        status = SourceStatus(server_id=server.id, source=src.name)
+                    tracker = TrackingRunner(run)
+                    started = time.monotonic()
+                    try:
+                        result = await src.collect(tracker, dict(st.state or {}))
+                    except Exception as e:
+                        apply_source_run(
+                            status,
+                            ok=False,
+                            exit_status=None,
+                            error=f"{type(e).__name__}: {e}",
+                            command=tracker.last_command,
+                            records=0,
+                            findings=0,
+                            duration_ms=_elapsed_ms(started),
+                            now=utcnow(),
+                        )
+                        session.add(status)
+                        raise
                     findings = [
                         f for r in result.records if (f := self.engine.analyze(server.id, r))
                     ]
                     await upsert_findings(session, server.id, findings)
                     st.state = result.new_state
+                    failure = tracker.failure
+                    apply_source_run(
+                        status,
+                        ok=failure is None,
+                        exit_status=failure.exit_status if failure else 0,
+                        error=failure.error if failure else None,
+                        command=failure.command if failure else tracker.last_command,
+                        records=len(result.records),
+                        findings=len(findings),
+                        duration_ms=_elapsed_ms(started),
+                        now=utcnow(),
+                    )
+                    session.add(status)
                     self._last_run[(server.id, src.name)] = now
+                    if failure:
+                        log.warning("%s/%s: %s", server.name, src.name, failure.error)
                     if findings:
                         log.info("%s/%s: %d findings", server.name, src.name, len(findings))
 
@@ -112,7 +160,15 @@ class Collector:
                 server.last_error = f"{type(e).__name__}: {e}"
                 log.warning("%s: collection failed: %s", server.name, server.last_error)
 
-            server.status = await compute_status(session, server)
+            active = select_active(
+                server.capabilities, await load_source_rows(session, server.id)
+            )
+            source_error = summarize_failures(row for _, row in active if row)
+            if server.last_error is None:
+                server.last_error = source_error
+            server.status = await compute_status(
+                session, server, source_failed=source_error is not None
+            )
             await session.commit()
 
 

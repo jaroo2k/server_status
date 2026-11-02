@@ -72,3 +72,23 @@ class CollectorState(Base):
     )
     source: Mapped[str] = mapped_column(String(32), primary_key=True)
     state: Mapped[dict] = mapped_column(JSON, default=dict)
+
+
+class SourceStatus(Base):
+    """Outcome of the latest run of each log source on a server."""
+
+    __tablename__ = "source_status"
+
+    server_id: Mapped[int] = mapped_column(
+        ForeignKey("servers.id", ondelete="CASCADE"), primary_key=True
+    )
+    source: Mapped[str] = mapped_column(String(32), primary_key=True)
+    ok: Mapped[bool] = mapped_column(Boolean)
+    exit_status: Mapped[int | None] = mapped_column(Integer)
+    error: Mapped[str | None] = mapped_column(Text)
+    command: Mapped[str | None] = mapped_column(Text)
+    records: Mapped[int] = mapped_column(Integer, default=0)
+    findings: Mapped[int] = mapped_column(Integer, default=0)
+    duration_ms: Mapped[int] = mapped_column(Integer, default=0)
+    last_run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    last_success_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

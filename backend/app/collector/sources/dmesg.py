@@ -37,7 +37,7 @@ class DmesgSource(Source):
 
     async def collect(self, run: Runner, state: dict) -> CollectResult:
         cmd = "dmesg --level=err,crit,alert,emerg --time-format iso"
-        _, out = await run(f"{cmd} 2>/dev/null || sudo -n {cmd}")
+        _, out = await run(f"{cmd} || sudo -n {cmd}")
         records, last = parse_dmesg_iso(out, state.get("last_ts"))
         if state.get("last_ts") is None:
             # first run: establish a baseline without reporting the whole buffer

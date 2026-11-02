@@ -1,6 +1,12 @@
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import ClassVar, Protocol
+from typing import ClassVar, NamedTuple, Protocol
+
+
+class CommandResult(NamedTuple):
+    exit_status: int
+    stdout: str
+    stderr: str
 
 
 @dataclass

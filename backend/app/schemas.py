@@ -70,6 +70,23 @@ class EventOut(BaseModel):
     acknowledged: bool
 
 
+class SourceStatusOut(BaseModel):
+    """Latest run of one log source. `ok` is None until the source has run."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    source: str
+    ok: bool | None = None
+    exit_status: int | None = None
+    error: str | None = None
+    command: str | None = None
+    records: int = 0
+    findings: int = 0
+    duration_ms: int = 0
+    last_run_at: datetime | None = None
+    last_success_at: datetime | None = None
+
+
 class Summary(BaseModel):
     servers_total: int
     servers_by_status: dict[str, int]

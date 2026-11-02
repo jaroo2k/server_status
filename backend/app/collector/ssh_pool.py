@@ -3,6 +3,7 @@ import logging
 
 import asyncssh
 
+from app.collector.sources.base import CommandResult
 from app.core.config import settings
 from app.core.security import decrypt
 from app.models import Server
@@ -73,11 +74,16 @@ class SSHPool:
             self.drop(sid)
 
 
-async def run_command(conn: asyncssh.SSHClientConnection, command: str) -> tuple[int, str]:
+def _text(value: str | bytes | None) -> str:
+    if isinstance(value, bytes):
+        return value.decode("utf-8", "replace")
+    return value or ""
+
+
+async def run_command(conn: asyncssh.SSHClientConnection, command: str) -> CommandResult:
     result = await asyncio.wait_for(
         conn.run(command, check=False), timeout=settings.ssh_command_timeout
     )
-    out = result.stdout or ""
-    if isinstance(out, bytes):
-        out = out.decode("utf-8", "replace")
-    return result.exit_status or 0, out
+    # exit_status is None when the remote command was killed by a signal
+    exit_status = -1 if result.exit_status is None else result.exit_status
+    return CommandResult(exit_status, _text(result.stdout), _text(result.stderr))

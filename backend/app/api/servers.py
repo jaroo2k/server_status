@@ -4,12 +4,19 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.analyzer.store import load_source_rows, select_active
 from app.collector.capabilities import DETECT_SCRIPT, parse_capabilities
 from app.collector.ssh_pool import HostKeyChanged, connect, run_command
 from app.core.db import get_session
 from app.core.security import encrypt
 from app.models import Server
-from app.schemas import ConnectionTestOut, ServerCreate, ServerOut, ServerUpdate
+from app.schemas import (
+    ConnectionTestOut,
+    ServerCreate,
+    ServerOut,
+    ServerUpdate,
+    SourceStatusOut,
+)
 
 router = APIRouter(prefix="/api/servers", tags=["servers"])
 
@@ -59,6 +66,19 @@ async def get_server(server_id: int, session: AsyncSession = Depends(get_session
     return to_out(await _get(session, server_id))
 
 
+@router.get("/{server_id}/sources", response_model=list[SourceStatusOut])
+async def list_sources(server_id: int, session: AsyncSession = Depends(get_session)):
+    """Latest collection result of each log source enabled for this server."""
+    server = await _get(session, server_id)
+    active = select_active(server.capabilities, await load_source_rows(session, server_id))
+    return [
+        SourceStatusOut.model_validate(row, from_attributes=True)
+        if row
+        else SourceStatusOut(source=name)
+        for name, row in active
+    ]
+
+
 @router.patch("/{server_id}", response_model=ServerOut)
 async def update_server(
     server_id: int, body: ServerUpdate, session: AsyncSession = Depends(get_session)
@@ -90,7 +110,7 @@ async def test_connection(server_id: int, session: AsyncSession = Depends(get_se
     try:
         conn, host_key = await connect(server)
         async with conn:
-            _, out = await run_command(conn, DETECT_SCRIPT)
+            out = (await run_command(conn, DETECT_SCRIPT)).stdout
     except HostKeyChanged as e:
         return ConnectionTestOut(ok=False, error=str(e))
     except Exception as e:  # noqa: BLE001

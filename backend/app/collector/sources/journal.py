@@ -53,6 +53,6 @@ class JournalSource(Source):
             # first run: only look back a short window instead of full history
             cmd = f"{base} --since=-10min"
         # monitor user should be in the systemd-journal group; fall back to sudo
-        _, out = await run(f"{cmd} 2>/dev/null || sudo -n {cmd}")
+        _, out = await run(f"{cmd} || sudo -n {cmd}")
         records, new_cursor = parse_journal_json(out)
         return CollectResult(records, {"cursor": new_cursor or state.get("cursor")})

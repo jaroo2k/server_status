@@ -50,6 +50,8 @@
   td.actions { white-space: nowrap; }
   .empty { padding: 28px; text-align: center; color: var(--muted); }
   .msg { max-width: 520px; word-break: break-all; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+  #events .msg { cursor: copy; border-radius: 4px; }
+  #events .msg:hover { background: var(--hover); }
   .err { color: var(--crit); font-size: 12px; max-width: 320px; word-break: break-all; }
   .clickable { cursor: pointer; }
 
@@ -57,7 +59,9 @@
   .b-ok { color: var(--ok); background: var(--ok-bg); }
   .b-warning { color: var(--warn); background: var(--warn-bg); }
   .b-critical { color: var(--crit); background: var(--crit-bg); }
-  .b-unreachable, .b-unknown, .b-disabled { color: var(--gray); background: var(--gray-bg); }
+  .b-degraded, .b-source-fail { color: var(--crit); background: var(--crit-bg); }
+  .b-source-ok { color: var(--ok); background: var(--ok-bg); }
+  .b-unreachable, .b-unknown, .b-disabled, .b-source-pending { color: var(--gray); background: var(--gray-bg); }
   .tag { display: inline-block; padding: 0 6px; margin: 1px 2px 1px 0; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; color: var(--muted); }
 
   button, select, input, textarea { font: inherit; color: var(--text); }
@@ -73,10 +77,18 @@
 
   dialog { border: 1px solid var(--border); border-radius: 12px; background: var(--panel); color: var(--text); padding: 0; width: min(560px, calc(100vw - 32px)); }
   dialog::backdrop { background: rgba(0,0,0,.4); }
+  #sources-dialog { width: min(1040px, calc(100vw - 32px)); }
+  #sources-dialog .sources-head { display: flex; align-items: center; gap: 8px; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+  #sources-dialog .sources-head h2 { margin-right: auto; }
+  #sources-dialog .msg { max-width: 460px; }
+  #sources-dialog .err { max-width: 460px; }
+  #sources-dialog .hint { padding: 12px 20px; }
   dialog form { padding: 20px; display: grid; gap: 12px; }
   dialog .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   dialog label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
   dialog input, dialog select { width: 100%; }
+  dialog label.inline { width: fit-content; cursor: pointer; }
+  dialog input[type="checkbox"] { width: 16px; height: 16px; margin: 0; padding: 0; flex: none; accent-color: var(--accent); cursor: pointer; }
   dialog .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 
   #toasts { position: fixed; right: 16px; bottom: 16px; display: grid; gap: 8px; z-index: 10; }
@@ -174,11 +186,28 @@
   </form>
 </dialog>
 
+<dialog id="sources-dialog">
+  <div class="sources-head">
+    <h2 id="sources-title">수집 상세</h2>
+    <button type="button" id="sources-close">닫기</button>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th>소스</th><th>결과</th><th>마지막 실행</th><th>마지막 성공</th>
+        <th>수집 건수</th><th>규칙 일치</th><th>소요 시간</th><th>명령 / 오류</th>
+      </tr></thead>
+      <tbody id="sources"></tbody>
+    </table>
+  </div>
+  <p class="small muted hint">각 소스의 마지막 실행 결과입니다. 수집 건수는 소스에서 가져온 로그 수이고, 규칙에 일치한 로그만 이벤트로 저장됩니다.</p>
+</dialog>
+
 <div id="toasts"></div>
 
 <script>
 const $ = (sel) => document.querySelector(sel);
-const STATUS_LABEL = { ok: "정상", warning: "경고", critical: "심각", unreachable: "접속 불가", unknown: "미확인" };
+const STATUS_LABEL = { ok: "정상", warning: "경고", critical: "심각", degraded: "수집 오류", unreachable: "접속 불가", unknown: "미확인" };
 const CATEGORY_LABEL = { hardware: "하드웨어", server_error: "서버 오류" };
 
 let servers = [];
@@ -232,6 +261,7 @@ function renderSummary(s) {
     ["정상", st.ok || 0, "ok"],
     ["경고", st.warning || 0, "warn"],
     ["심각", st.critical || 0, "crit"],
+    ["수집 오류", st.degraded || 0, "crit"],
     ["접속 불가", st.unreachable || 0, "gray"],
     ["미확인 critical 이벤트", sev.critical || 0, "crit"],
     ["미확인 warning 이벤트", sev.warning || 0, "warn"],
@@ -262,8 +292,9 @@ function renderServers() {
         <td>${s.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("") || '<span class="muted">-</span>'}</td>
         <td class="small">${s.capabilities.map(esc).join("<br>") || '<span class="muted">미탐지</span>'}</td>
         <td>${fmtTime(s.last_collected_at)}</td>
-        <td>${s.last_error ? `<div class="err">${esc(s.last_error)}</div><span class="small muted">연속 실패 ${s.consecutive_failures}회</span>` : '<span class="muted">-</span>'}</td>
+        <td>${s.last_error ? `<div class="err">${esc(s.last_error)}</div>${s.consecutive_failures ? `<span class="small muted">연속 실패 ${s.consecutive_failures}회</span>` : ""}` : '<span class="muted">-</span>'}</td>
         <td class="actions">
+          <button class="sm" data-act="sources">수집 상세</button>
           <button class="sm" data-act="test">연결 테스트</button>
           <button class="sm" data-act="edit">수정</button>
           <button class="sm" data-act="toggle">${s.enabled ? "비활성화" : "활성화"}</button>
@@ -293,6 +324,7 @@ $("#servers").addEventListener("click", async (e) => {
     return loadEvents();
   }
   if (act === "edit") return openDialog(s);
+  if (act === "sources") return openSources(s);
 
   btn.disabled = true;
   try {
@@ -388,6 +420,55 @@ form.addEventListener("submit", async (e) => {
   }
 });
 
+// ---------- 수집 상세 ----------
+const SOURCE_LABEL = { journal: "시스템 저널 (journalctl)", systemd: "실패한 서비스 (systemctl)", dmesg: "커널 로그 (dmesg)" };
+const sourcesDialog = $("#sources-dialog");
+let sourcesServerId = null;
+
+function sourceBadge(src) {
+  if (src.ok === null) return '<span class="badge b-source-pending">대기 중</span>';
+  return src.ok ? '<span class="badge b-source-ok">성공</span>' : '<span class="badge b-source-fail">실패</span>';
+}
+
+async function loadSources() {
+  const requestedId = sourcesServerId;
+  const list = await api(`/api/servers/${requestedId}/sources`);
+  if (requestedId !== sourcesServerId) return;  // 응답 전에 다른 서버를 연 경우
+  const tbody = $("#sources");
+  if (!list.length) {
+    tbody.innerHTML = `<tr><td colspan="8" class="empty">활성화된 수집 소스가 없습니다. 연결 테스트로 기능을 탐지하세요.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = list.map((src) => `
+    <tr>
+      <td>${esc(SOURCE_LABEL[src.source] || src.source)}</td>
+      <td>${sourceBadge(src)}</td>
+      <td>${fmtTime(src.last_run_at)}</td>
+      <td>${fmtTime(src.last_success_at)}</td>
+      <td>${src.ok === true ? `${src.records}건` : "-"}</td>
+      <td>${src.ok === true ? `${src.findings}건` : "-"}</td>
+      <td>${src.ok === null ? "-" : `${src.duration_ms}ms`}</td>
+      <td>
+        ${src.error ? `<div class="err">${esc(src.error)}</div>` : ""}
+        ${src.command ? `<div class="msg muted">${esc(src.command)}</div>` : ""}
+      </td>
+    </tr>`).join("");
+}
+
+async function openSources(s) {
+  sourcesServerId = s.id;
+  $("#sources-title").textContent = `수집 상세: ${s.name}`;
+  $("#sources").innerHTML = `<tr><td colspan="8" class="empty">불러오는 중...</td></tr>`;
+  sourcesDialog.showModal();
+  try {
+    await loadSources();
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
+$("#sources-close").addEventListener("click", () => sourcesDialog.close());
+
 // ---------- 이벤트 ----------
 async function loadEvents() {
   const params = new URLSearchParams({ limit: "200" });
@@ -408,7 +489,7 @@ async function loadEvents() {
       <td>${esc(ev.server_name)}</td>
       <td>${CATEGORY_LABEL[ev.category] || esc(ev.category)}<br><span class="small muted">${esc(ev.rule_id)}</span></td>
       <td>${esc(ev.title)}<br><span class="small muted">${esc(ev.source)}</span></td>
-      <td><div class="msg">${esc(ev.message)}</div></td>
+      <td><div class="msg" title="클릭하여 복사">${esc(ev.message)}</div></td>
       <td>${ev.count}</td>
       <td>${fmtTime(ev.first_seen)}</td>
       <td>${fmtTime(ev.last_seen)}</td>
@@ -416,7 +497,36 @@ async function loadEvents() {
     </tr>`).join("");
 }
 
+async function copyText(text) {
+  // navigator.clipboard는 HTTPS/localhost에서만 제공되므로 HTTP 접속 시 execCommand로 대체
+  if (navigator.clipboard) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+  const ta = document.createElement("textarea");
+  ta.value = text;
+  ta.style.position = "fixed";
+  ta.style.opacity = "0";
+  document.body.append(ta);
+  ta.select();
+  const ok = document.execCommand("copy");
+  ta.remove();
+  if (!ok) throw new Error("클립보드 복사에 실패했습니다");
+}
+
 $("#events").addEventListener("click", async (e) => {
+  const msg = e.target.closest(".msg");
+  if (msg) {
+    // 드래그로 일부만 선택하는 경우는 복사하지 않고 선택을 유지
+    if (getSelection().toString()) return;
+    try {
+      await copyText(msg.textContent);
+      toast("메시지를 복사했습니다", "success");
+    } catch (err) {
+      toast(err.message, "error");
+    }
+    return;
+  }
   const btn = e.target.closest("[data-act=ack]");
   if (!btn) return;
   btn.disabled = true;
@@ -449,6 +559,7 @@ async function refresh() {
     renderSummary(summary);
     renderServers();
     await loadEvents();
+    if (sourcesDialog.open) await loadSources();
     $("#updated").textContent = `마지막 갱신 ${new Date().toLocaleTimeString()}`;
   } catch (err) {
     toast(`데이터를 불러오지 못했습니다: ${err.message}`, "error");

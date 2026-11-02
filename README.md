@@ -82,6 +82,8 @@ curl localhost:8000/healthz
 - **서버 관리**: 추가, 수정, 삭제, 활성화/비활성화, 연결 테스트, 호스트 키 초기화
   - 서버를 추가하면 바로 연결 테스트를 실행합니다.
   - 수정할 때 인증정보 칸을 비워 두면 기존 값을 유지합니다.
+- **수집 상세**: 소스별 마지막 실행·성공 시각, 결과, 수집 건수, 규칙 일치 건수, 소요 시간, 실행 명령과 오류
+  - 접속은 되지만 로그 수집 명령이 실패하면 서버 상태가 `수집 오류`(`degraded`)로 표시됩니다. `critical`/`warning` 이벤트가 있으면 그 상태가 먼저 표시되며, 수집 오류 내용은 오류 칸에서 볼 수 있습니다.
 - **이벤트**: 서버·심각도·분류·확인 여부로 필터, 제목/메시지 검색, 확인 처리
   - 서버 이름을 누르면 그 서버의 이벤트만 봅니다.
 - 10초마다 자동으로 새로고침합니다(체크박스로 끌 수 있음).
@@ -134,6 +136,7 @@ docker compose --profile test down -v   # DB 데이터까지 삭제
 | GET | `/api/servers` | 서버 목록 |
 | POST | `/api/servers` | 서버 등록 |
 | GET / PATCH / DELETE | `/api/servers/{id}` | 서버 조회 / 수정 / 삭제 |
+| GET | `/api/servers/{id}/sources` | 소스별 마지막 수집 결과 |
 | POST | `/api/servers/{id}/test` | SSH 연결 테스트 및 기능 탐지 |
 | POST | `/api/servers/{id}/reset-host-key` | 고정된 호스트 키 해제 |
 | GET | `/api/events` | 이벤트 조회 (`server_id`, `severity`, `category`, `acknowledged`, `since`, `q`, `limit`, `offset` 필터) |
