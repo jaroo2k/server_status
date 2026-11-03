@@ -6,6 +6,7 @@
 <title>서버 모니터 관리자</title>
 <style>
   :root {
+    color-scheme: light dark;
     --bg: #f5f6f8; --panel: #fff; --text: #1d2127; --muted: #6b7280; --border: #e3e6ea;
     --accent: #2563eb; --accent-text: #fff; --hover: #f0f2f5;
     --ok: #15803d; --ok-bg: #dcfce7; --warn: #a16207; --warn-bg: #fef3c7;
@@ -50,10 +51,13 @@
   td.actions { white-space: nowrap; }
   .empty { padding: 28px; text-align: center; color: var(--muted); }
   .msg { max-width: 520px; word-break: break-all; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
-  #events .msg { cursor: copy; border-radius: 4px; }
-  #events .msg:hover { background: var(--hover); }
+  .event-msg { display: block; width: 100%; min-width: 280px; max-width: 520px; padding: 4px 6px; margin: -4px -6px; background: none; border: 0; border-radius: 6px; text-align: left; }
+  .event-msg:hover { background: var(--border); }
+  .event-msg:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .event-msg .desc { display: block; margin-bottom: 2px; }
+  .event-msg .msg { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; color: var(--muted); }
   .err { color: var(--crit); font-size: 12px; max-width: 320px; word-break: break-all; }
-  .clickable { cursor: pointer; }
+  .clickable { cursor: pointer; color: inherit; text-decoration: none; }
 
   .badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 500; white-space: nowrap; }
   .b-ok { color: var(--ok); background: var(--ok-bg); }
@@ -78,8 +82,27 @@
   dialog { border: 1px solid var(--border); border-radius: 12px; background: var(--panel); color: var(--text); padding: 0; width: min(560px, calc(100vw - 32px)); }
   dialog::backdrop { background: rgba(0,0,0,.4); }
   #sources-dialog { width: min(1040px, calc(100vw - 32px)); }
-  #sources-dialog .sources-head { display: flex; align-items: center; gap: 8px; padding: 16px 20px; border-bottom: 1px solid var(--border); }
-  #sources-dialog .sources-head h2 { margin-right: auto; }
+  .sources-head { display: flex; align-items: center; gap: 8px; padding: 16px 20px; border-bottom: 1px solid var(--border); }
+  .sources-head h2 { margin-right: auto; }
+  #event-dialog { width: min(860px, calc(100vw - 32px)); }
+  #event-dialog h3 { font-size: 14px; margin: 0 0 6px; }
+  .event-body { padding: 16px 20px 20px; display: grid; gap: 16px; }
+  .event-meaning { margin: 0; padding: 10px 12px; background: var(--hover); border-radius: 8px; }
+  .event-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px 16px; margin: 0; }
+  .event-meta dt { color: var(--muted); font-size: 12px; }
+  .event-meta dd { margin: 0; word-break: break-word; }
+  #event-dialog .msg { max-width: none; white-space: pre-wrap; }
+  #event-dialog td.time { white-space: nowrap; }
+  #event-note:empty { display: none; }
+  #event-note { margin: 0 0 6px; }
+  #event-dialog .history-filter { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 8px; }
+  #event-dialog .history-filter h3 { margin: 0 auto 0 0; }
+  #event-dialog .history-filter input { width: auto; }
+  .history-more { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 10px 16px; border-top: 1px solid var(--border); }
+  .history-more:empty { display: none; }
+  #history .msg { color: var(--muted); }
+  #h-event { max-width: 340px; }
+  #history td.time { white-space: nowrap; }
   #sources-dialog .msg { max-width: 460px; }
   #sources-dialog .err { max-width: 460px; }
   #sources-dialog .hint { padding: 12px 20px; }
@@ -155,6 +178,28 @@
       </table>
     </div>
   </section>
+
+  <section>
+    <div class="section-head">
+      <h2>발생 이력</h2>
+      <select id="h-server" aria-label="서버"><option value="">전체 서버</option></select>
+      <select id="h-severity" aria-label="심각도">
+        <option value="">전체 심각도</option><option value="critical">critical</option><option value="warning">warning</option>
+      </select>
+      <select id="h-event" aria-label="이벤트"><option value="">전체 이벤트</option></select>
+      <label class="inline">시작일 <input type="date" id="h-from"></label>
+      <label class="inline">종료일 <input type="date" id="h-to"></label>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr>
+          <th>발생 시각</th><th>서버</th><th>심각도</th><th>이벤트</th><th>원본 로그</th>
+        </tr></thead>
+        <tbody id="history"></tbody>
+      </table>
+    </div>
+    <div class="history-more" id="history-more"></div>
+  </section>
 </main>
 
 <dialog id="server-dialog">
@@ -201,6 +246,35 @@
     </table>
   </div>
   <p class="small muted hint">각 소스의 마지막 실행 결과입니다. 수집 건수는 소스에서 가져온 로그 수이고, 규칙에 일치한 로그만 이벤트로 저장됩니다.</p>
+</dialog>
+
+<dialog id="event-dialog">
+  <div class="sources-head">
+    <h2 id="event-title">이벤트 상세</h2>
+    <button type="button" id="event-close">닫기</button>
+  </div>
+  <div class="event-body">
+    <div>
+      <h3>이 로그의 의미</h3>
+      <p class="event-meaning" id="event-meaning"></p>
+    </div>
+    <dl class="event-meta" id="event-meta"></dl>
+    <div>
+      <div class="history-filter">
+        <h3>발생 이력</h3>
+        <label class="inline">시작일 <input type="date" id="event-from"></label>
+        <label class="inline">종료일 <input type="date" id="event-to"></label>
+      </div>
+      <p class="small muted" id="event-note"></p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>발생 시각</th><th>원본 로그</th><th></th></tr></thead>
+          <tbody id="event-lines"></tbody>
+        </table>
+      </div>
+      <div class="history-more" id="event-more"></div>
+    </div>
+  </div>
 </dialog>
 
 <div id="toasts"></div>
@@ -308,6 +382,11 @@ function renderServers() {
   sel.innerHTML = `<option value="">전체 서버</option>` +
     servers.map((s) => `<option value="${s.id}">${esc(s.name)}</option>`).join("");
   sel.value = servers.some((s) => String(s.id) === selected) ? selected : "";
+
+  const historySel = $("#h-server");
+  const historySelected = historySel.value;
+  historySel.innerHTML = sel.innerHTML;
+  historySel.value = servers.some((s) => String(s.id) === historySelected) ? historySelected : "";
 }
 
 $("#servers").addEventListener("click", async (e) => {
@@ -470,6 +549,8 @@ async function openSources(s) {
 $("#sources-close").addEventListener("click", () => sourcesDialog.close());
 
 // ---------- 이벤트 ----------
+let eventsById = new Map();
+
 async function loadEvents() {
   const params = new URLSearchParams({ limit: "200" });
   const map = { server_id: "#f-server", severity: "#f-severity", category: "#f-category", acknowledged: "#f-ack", q: "#f-q" };
@@ -478,6 +559,7 @@ async function loadEvents() {
     if (v) params.set(k, v);
   }
   const events = await api(`/api/events?${params}`);
+  eventsById = new Map(events.map((ev) => [ev.id, ev]));
   const tbody = $("#events");
   if (!events.length) {
     tbody.innerHTML = `<tr><td colspan="9" class="empty">조건에 맞는 이벤트가 없습니다.</td></tr>`;
@@ -489,7 +571,12 @@ async function loadEvents() {
       <td>${esc(ev.server_name)}</td>
       <td>${CATEGORY_LABEL[ev.category] || esc(ev.category)}<br><span class="small muted">${esc(ev.rule_id)}</span></td>
       <td>${esc(ev.title)}<br><span class="small muted">${esc(ev.source)}</span></td>
-      <td><div class="msg" title="클릭하여 복사">${esc(ev.message)}</div></td>
+      <td>
+        <button type="button" class="event-msg" data-act="detail" title="클릭하여 상세 로그 보기">
+          <span class="desc">${esc(ev.description)}</span>
+          <span class="msg">${esc(ev.message)}</span>
+        </button>
+      </td>
       <td>${ev.count}</td>
       <td>${fmtTime(ev.first_seen)}</td>
       <td>${fmtTime(ev.last_seen)}</td>
@@ -507,26 +594,206 @@ async function copyText(text) {
   ta.value = text;
   ta.style.position = "fixed";
   ta.style.opacity = "0";
-  document.body.append(ta);
+  // 모달이 열려 있으면 그 밖의 요소는 선택되지 않으므로 모달 안에 넣음
+  (document.querySelector("dialog[open]") || document.body).append(ta);
   ta.select();
   const ok = document.execCommand("copy");
   ta.remove();
   if (!ok) throw new Error("클립보드 복사에 실패했습니다");
 }
 
-$("#events").addEventListener("click", async (e) => {
-  const msg = e.target.closest(".msg");
-  if (msg) {
-    // 드래그로 일부만 선택하는 경우는 복사하지 않고 선택을 유지
-    if (getSelection().toString()) return;
-    try {
-      await copyText(msg.textContent);
-      toast("메시지를 복사했습니다", "success");
-    } catch (err) {
-      toast(err.message, "error");
-    }
-    return;
+// ---------- 발생 이력 공통 ----------
+const HISTORY_PAGE = 100;
+
+function historyQuery(filters, fromEl, toEl, offset) {
+  const params = new URLSearchParams({ limit: String(HISTORY_PAGE), offset: String(offset) });
+  for (const [k, v] of Object.entries(filters)) if (v) params.set(k, v);
+  // 날짜 입력은 브라우저 시간대 기준. 종료일은 그날 끝까지 포함하도록 다음 날 0시 전까지 조회
+  if (fromEl.value) params.set("from", new Date(`${fromEl.value}T00:00`).toISOString());
+  if (toEl.value) {
+    const end = new Date(`${toEl.value}T00:00`);
+    end.setDate(end.getDate() + 1);
+    params.set("to", end.toISOString());
   }
+  return `/api/occurrences?${params}`;
+}
+
+// 조회 사이에 새 로그가 쌓이면 다음 페이지가 겹칠 수 있어 id로 중복을 제거
+function appendLines(lines, page) {
+  const seen = new Set(lines.map((l) => l.id));
+  return lines.concat(page.filter((l) => !seen.has(l.id)));
+}
+
+function moreBar(shown, total, moreId) {
+  return shown < total
+    ? `<span class="small muted">${total.toLocaleString()}건 중 ${shown.toLocaleString()}건 표시</span><button type="button" id="${moreId}">더 보기</button>`
+    : "";
+}
+
+// ---------- 전체 발생 이력 ----------
+let historyLines = [];
+let historyRequest = 0;
+let historyEvents = [];
+
+// 고른 서버·심각도에 속한 이벤트만 선택지로 보여줌
+function renderHistoryEventOptions() {
+  const sel = $("#h-event");
+  const selected = sel.value;
+  const server = $("#h-server").value;
+  const severity = $("#h-severity").value;
+  const events = historyEvents
+    .filter((ev) => (!server || String(ev.server_id) === server) && (!severity || ev.severity === severity))
+    .sort((a, b) => b.id - a.id);
+  const html = `<option value="">전체 이벤트</option>` + events
+    .map((ev) => `<option value="${ev.id}">${esc(`[${ev.server_name}] ${ev.title} - ${ev.message.slice(0, 40)}`)}</option>`)
+    .join("");
+  // 자동 새로고침이 펼쳐 놓은 목록을 닫지 않도록 바뀌었을 때만 다시 그림
+  if (sel.dataset.options !== html) {
+    sel.innerHTML = html;
+    sel.dataset.options = html;
+  }
+  sel.value = events.some((ev) => String(ev.id) === selected) ? selected : "";
+}
+
+async function loadHistory({ more = false } = {}) {
+  const request = ++historyRequest;
+  const page = await api(historyQuery(
+    { server_id: $("#h-server").value, severity: $("#h-severity").value, event_id: $("#h-event").value },
+    $("#h-from"), $("#h-to"), more ? historyLines.length : 0,
+  ));
+  if (request !== historyRequest) return;  // 응답 전에 조건을 바꾼 경우
+  historyLines = more ? appendLines(historyLines, page.items) : page.items;
+  const tbody = $("#history");
+  tbody.innerHTML = historyLines.map((line) => `
+    <tr data-event="${line.event_id}">
+      <td class="time small">${esc(new Date(line.seen_at).toLocaleString())}</td>
+      <td>${esc(line.server_name)}</td>
+      <td><span class="badge b-${esc(line.severity)}">${esc(line.severity)}</span></td>
+      <td>${esc(line.title)}<br><span class="small muted">${esc(line.rule_id)}</span></td>
+      <td><button type="button" class="event-msg" data-act="detail" title="클릭하여 이벤트 상세 보기"><span class="msg">${esc(line.message)}</span></button></td>
+    </tr>`).join("") || `<tr><td colspan="5" class="empty">조건에 맞는 이력이 없습니다.</td></tr>`;
+  $("#history-more").innerHTML = moreBar(historyLines.length, page.total, "history-load-more");
+}
+
+$("#history").addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-act=detail]");
+  if (!btn) return;
+  try {
+    const ev = await api(`/api/events/${btn.closest("tr").dataset.event}`);
+    await openEventDetail(ev, { from: $("#h-from").value, to: $("#h-to").value });
+  } catch (err) {
+    toast(err.message, "error");
+  }
+});
+
+$("#history-more").addEventListener("click", (e) => {
+  if (e.target.id === "history-load-more") loadHistory({ more: true }).catch((err) => toast(err.message, "error"));
+});
+
+for (const sel of ["#h-server", "#h-severity", "#h-event", "#h-from", "#h-to"]) {
+  $(sel).addEventListener("change", () => {
+    renderHistoryEventOptions();
+    loadHistory().catch((err) => toast(err.message, "error"));
+  });
+}
+
+// ---------- 이벤트 상세 ----------
+const eventDialog = $("#event-dialog");
+let detailEvent = null;
+let detailLines = [];
+let detailRequest = 0;
+
+function renderEventLines() {
+  $("#event-lines").innerHTML = detailLines.map((line, i) => `
+    <tr>
+      <td class="time small">${esc(new Date(line.seen_at).toLocaleString())}</td>
+      <td><div class="msg">${esc(line.message)}</div></td>
+      <td class="actions"><button type="button" class="sm" data-copy="${i}">복사</button></td>
+    </tr>`).join("") || `<tr><td colspan="3" class="empty">조건에 맞는 이력이 없습니다.</td></tr>`;
+}
+
+async function loadDetailLines({ more = false } = {}) {
+  const ev = detailEvent;
+  const request = ++detailRequest;
+  const filtered = $("#event-from").value || $("#event-to").value;
+  try {
+    const page = await api(historyQuery(
+      { event_id: ev.id }, $("#event-from"), $("#event-to"), more ? detailLines.length : 0,
+    ));
+    if (request !== detailRequest) return;  // 응답 전에 다른 이벤트를 열거나 조건을 바꾼 경우
+    if (!page.total && !filtered) {
+      // 이력 저장을 시작하기 전의 이벤트에는 저장된 줄이 없음
+      detailLines = [{ message: ev.message, seen_at: ev.last_seen }];
+      $("#event-note").textContent = "저장된 발생 이력이 없어 최근 로그 1건만 표시합니다.";
+      $("#event-more").innerHTML = "";
+    } else {
+      detailLines = more ? appendLines(detailLines, page.items) : page.items;
+      $("#event-note").textContent = filtered
+        ? `조회 결과 ${page.total.toLocaleString()}건`
+        : page.total < ev.count
+          ? `전체 ${ev.count.toLocaleString()}회 중 원본 로그 ${page.total.toLocaleString()}건이 보관되어 있습니다. 나머지는 이력 저장 전에 발생했거나 지워져 볼 수 없습니다.`
+          : "";
+      $("#event-more").innerHTML = moreBar(detailLines.length, page.total, "event-load-more");
+    }
+    renderEventLines();
+  } catch (err) {
+    if (request !== detailRequest) return;
+    $("#event-note").textContent = "발생 이력을 불러오지 못했습니다.";
+    toast(err.message, "error");
+  }
+}
+
+$("#event-more").addEventListener("click", (e) => {
+  if (e.target.id === "event-load-more") loadDetailLines({ more: true });
+});
+
+for (const sel of ["#event-from", "#event-to"]) {
+  $(sel).addEventListener("change", () => loadDetailLines());
+}
+
+async function openEventDetail(ev, dates = {}) {
+  detailEvent = ev;
+  $("#event-from").value = dates.from || "";
+  $("#event-to").value = dates.to || "";
+  $("#event-title").textContent = `${ev.server_name}: ${ev.title}`;
+  $("#event-meaning").textContent = ev.description;
+  const meta = [
+    ["심각도", `<span class="badge b-${esc(ev.severity)}">${esc(ev.severity)}</span>`],
+    ["분류", CATEGORY_LABEL[ev.category] || esc(ev.category)],
+    ["규칙", esc(ev.rule_id)],
+    ["소스", esc(ev.source)],
+    ["발생 횟수", `${ev.count}회`],
+    ["최초 발생", esc(new Date(ev.first_seen).toLocaleString())],
+    ["최근 발생", esc(new Date(ev.last_seen).toLocaleString())],
+  ];
+  $("#event-meta").innerHTML = meta.map(([k, v]) => `<div><dt>${k}</dt><dd>${v}</dd></div>`).join("");
+  // 이력을 받기 전에도, 받지 못해도 저장된 최근 로그는 볼 수 있도록 먼저 표시
+  detailLines = [{ message: ev.message, seen_at: ev.last_seen }];
+  renderEventLines();
+  $("#event-note").textContent = "발생 이력을 불러오는 중...";
+  $("#event-more").innerHTML = "";
+  eventDialog.showModal();
+  await loadDetailLines();
+}
+
+$("#event-close").addEventListener("click", () => eventDialog.close());
+
+$("#event-lines").addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-copy]");
+  if (!btn) return;
+  // 토스트는 모달에 가려지므로 결과를 버튼에 표시
+  try {
+    await copyText(detailLines[Number(btn.dataset.copy)].message);
+    btn.textContent = "복사됨";
+  } catch {
+    btn.textContent = "복사 실패";
+  }
+  setTimeout(() => { btn.textContent = "복사"; }, 1500);
+});
+
+$("#events").addEventListener("click", async (e) => {
+  const detail = e.target.closest("[data-act=detail]");
+  if (detail) return openEventDetail(eventsById.get(Number(detail.closest("tr").dataset.id)));
   const btn = e.target.closest("[data-act=ack]");
   if (!btn) return;
   btn.disabled = true;
@@ -554,11 +821,17 @@ async function refresh() {
   if (refreshing) return;
   refreshing = true;
   try {
-    const [summary, list] = await Promise.all([api("/api/summary"), api("/api/servers")]);
+    const [summary, list, allEvents] = await Promise.all([
+      api("/api/summary"), api("/api/servers"), api("/api/events?limit=1000"),
+    ]);
     servers = list;
+    historyEvents = allEvents;
     renderSummary(summary);
     renderServers();
+    renderHistoryEventOptions();
     await loadEvents();
+    // "더 보기"로 펼쳐 읽는 중이면 첫 페이지로 되돌리지 않음
+    if (historyLines.length <= HISTORY_PAGE) await loadHistory();
     if (sourcesDialog.open) await loadSources();
     $("#updated").textContent = `마지막 갱신 ${new Date().toLocaleTimeString()}`;
   } catch (err) {

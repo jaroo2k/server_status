@@ -5,6 +5,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -60,6 +61,19 @@ class Event(Base):
     first_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     last_seen: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     acknowledged: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class EventOccurrence(Base):
+    """Raw log line of one repeat of an Event, kept because Event.message is overwritten.
+    Never pruned, so the table grows for as long as events keep repeating."""
+
+    __tablename__ = "event_occurrences"
+    __table_args__ = (Index("ix_event_occurrences_event_id_seen_at", "event_id", "seen_at"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    event_id: Mapped[int] = mapped_column(ForeignKey("events.id", ondelete="CASCADE"))
+    message: Mapped[str] = mapped_column(Text)
+    seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
 
 
 class CollectorState(Base):

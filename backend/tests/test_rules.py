@@ -1,7 +1,7 @@
 import pytest
 
 from app.analyzer.fingerprint import fingerprint, normalize
-from app.analyzer.rule_engine import RuleEngine, load_rules
+from app.analyzer.rule_engine import RuleEngine, describe_rule, load_rules
 from app.collector.sources.base import RawRecord
 from app.core.config import settings
 
@@ -26,6 +26,22 @@ def engine():
         ("INFO: task jbd2/sda1-8:312 blocked for more than 120 seconds.", "kernel.panic", "server_error", "critical"),
         ("python3[999]: segfault at 0 ip 00007f sp 00007ffd error 4", "proc.segfault", "server_error", "warning"),
         ("Failed to start MySQL Server.", "service.failed_log", "server_error", "warning"),
+        # lines seen on a real server (nrpe.service, sudo)
+        ("Warning: Could not set UID=992", "proc.privilege_drop", "server_error", "warning"),
+        ("Warning: Could not set effective GID=988", "proc.privilege_drop", "server_error", "warning"),
+        (
+            "Warning: Unable to change supplementary groups using initgroups()",
+            "proc.privilege_drop",
+            "server_error",
+            "warning",
+        ),
+        (
+            "freecoupon : user NOT in sudoers ; TTY=pts/0 ; PWD=/home/freecoupon ; USER=root ; "
+            "COMMAND=/sbin/usermod -aG systemd-journal freecoupon",
+            "auth.sudo_denied",
+            "server_error",
+            "critical",
+        ),
     ],
 )
 def test_rule_matching(engine, message, rule_id, category, severity):
@@ -50,6 +66,33 @@ def test_unmatched_journal_falls_back_to_priority(engine):
     assert engine.analyze(1, RawRecord(source="journal", message="hello", priority=6)) is None
     # plain log files have no priority: unmatched lines are ignored
     assert engine.analyze(1, RawRecord(source="file:/var/log/syslog", message="something odd")) is None
+
+
+def test_every_shipped_rule_is_explained():
+    assert [r.id for r in load_rules(settings.rules_dir) if not r.description] == []
+
+
+def test_rule_file_may_omit_description(tmp_path):
+    (tmp_path / "custom.yaml").write_text(
+        """
+rules:
+  - {id: a, title: A, category: hardware, severity: warning, pattern: x, description: 뜻}
+  - {id: b, title: B, category: hardware, severity: warning, pattern: y}
+""",
+        encoding="utf-8",
+    )
+    assert [r.description for r in load_rules(tmp_path)] == ["뜻", ""]
+
+
+def test_describe_rule_uses_rule_text_or_a_fallback():
+    disk = describe_rule("disk.io_error")
+    priority = describe_rule("log.priority")
+    unknown = describe_rule("no.such.rule")
+
+    assert "디스크" in disk
+    assert "우선순위" in priority
+    assert unknown
+    assert len({disk, priority, unknown}) == 3
 
 
 def test_fingerprint_groups_variable_parts():

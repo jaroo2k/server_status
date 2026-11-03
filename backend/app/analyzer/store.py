@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.analyzer.rule_engine import Finding
 from app.collector.sources import sources_for
 from app.core.config import settings
-from app.models import Event, Server, SourceStatus, utcnow
+from app.models import Event, EventOccurrence, Server, SourceStatus, utcnow
 from app.notifier.alerts import should_alert
 
 
@@ -58,8 +58,11 @@ async def upsert_findings(
                 "message": stmt.excluded.message,
                 "acknowledged": False,
             },
+        ).returning(Event.id)
+        event_id = (await session.execute(stmt)).scalar_one()
+        await session.execute(
+            insert(EventOccurrence).values(event_id=event_id, message=f.message, seen_at=seen)
         )
-        await session.execute(stmt)
     return alerts
 
 

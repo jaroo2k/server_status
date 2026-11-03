@@ -1,7 +1,9 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
+
+from app.analyzer.rule_engine import describe_rule
 
 
 class ServerCreate(BaseModel):
@@ -68,6 +70,31 @@ class EventOut(BaseModel):
     first_seen: datetime
     last_seen: datetime
     acknowledged: bool
+
+    @computed_field
+    @property
+    def description(self) -> str:
+        return describe_rule(self.rule_id)
+
+
+class OccurrenceOut(BaseModel):
+    id: int
+    event_id: int
+    server_id: int
+    server_name: str
+    source: str
+    rule_id: str
+    severity: str
+    title: str
+    message: str
+    seen_at: datetime
+
+
+class OccurrencePage(BaseModel):
+    """`total` counts every line matching the filters, not just this page."""
+
+    total: int
+    items: list[OccurrenceOut]
 
 
 class SourceStatusOut(BaseModel):

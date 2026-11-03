@@ -86,6 +86,9 @@ curl localhost:8000/healthz
   - 접속은 되지만 로그 수집 명령이 실패하면 서버 상태가 `수집 오류`(`degraded`)로 표시됩니다. `critical`/`warning` 이벤트가 있으면 그 상태가 먼저 표시되며, 수집 오류 내용은 오류 칸에서 볼 수 있습니다.
 - **이벤트**: 서버·심각도·분류·확인 여부로 필터, 제목/메시지 검색, 확인 처리
   - 서버 이름을 누르면 그 서버의 이벤트만 봅니다.
+  - 메시지 칸에는 로그의 의미(규칙별 고정 설명)와 원본 로그가 함께 표시됩니다.
+  - 메시지를 누르면 상세 창에서 이벤트 정보와 발생 이력을 보고 원본 로그를 복사할 수 있습니다. 이력은 날짜로 검색할 수 있습니다.
+- **발생 이력**: 모든 이벤트의 원본 로그를 최신순으로 보여주며, 서버, 심각도, 이벤트, 날짜(브라우저 시간대 기준)로 검색할 수 있습니다. 로그를 누르면 해당 이벤트의 상세 창이 열립니다.
 - 10초마다 자동으로 새로고침합니다(체크박스로 끌 수 있음).
 - 다크 모드를 지원합니다.
 
@@ -140,6 +143,8 @@ docker compose --profile test down -v   # DB 데이터까지 삭제
 | POST | `/api/servers/{id}/test` | SSH 연결 테스트 및 기능 탐지 |
 | POST | `/api/servers/{id}/reset-host-key` | 고정된 호스트 키 해제 |
 | GET | `/api/events` | 이벤트 조회 (`server_id`, `severity`, `category`, `acknowledged`, `since`, `q`, `limit`, `offset` 필터) |
+| GET | `/api/events/{id}` | 이벤트 하나 조회 |
+| GET | `/api/occurrences` | 발생 이력 조회, 최신순 (`server_id`, `event_id`, `severity`, `from`(포함), `to`(미포함), `limit`, `offset`). 조건에 맞는 전체 건수 `total`을 함께 반환 |
 | POST | `/api/events/{id}/ack` | 이벤트 확인 처리 |
 | GET | `/api/summary` | 서버 상태별 개수, 미확인 이벤트 심각도·카테고리별 개수 |
 | GET | `/healthz` | 헬스 체크 |
@@ -160,7 +165,7 @@ docker compose --profile test down -v   # DB 데이터까지 삭제
 
 ## 탐지 규칙
 
-`backend/rules/default.yaml`에 정의되어 있습니다. 같은 디렉터리에 YAML 파일을 추가하면 규칙을 확장할 수 있습니다.
+`backend/rules/default.yaml`에 정의되어 있습니다. 같은 디렉터리에 YAML 파일을 추가하면 규칙을 확장할 수 있습니다. 규칙의 `description`은 대시보드에 로그의 의미로 표시되며, 바꾸면 API를 다시 시작해야 반영됩니다.
 
 | 규칙 ID | 카테고리 | 심각도 |
 |---|---|---|
@@ -176,6 +181,8 @@ docker compose --profile test down -v   # DB 데이터까지 삭제
 | `kernel.panic` | server_error | critical |
 | `proc.segfault` | server_error | warning |
 | `service.failed`, `service.failed_log` | server_error | warning |
+| `proc.privilege_drop` | server_error | warning |
+| `auth.sudo_denied` | server_error | critical |
 
 ## 설정 (`.env`)
 
@@ -220,5 +227,6 @@ pytest
 
 - 대시보드와 API에 인증이 없습니다.
 - DB 스키마는 기동할 때 `create_all`로 만듭니다. 아직 Alembic 마이그레이션은 없습니다.
+- 발생 이력(`event_occurrences`)은 자동으로 삭제되지 않습니다. 이벤트가 반복되는 만큼 DB가 계속 커지므로 용량을 지켜봐야 합니다.
 - 로그 소스 수집 주기가 60초라서 장애 로그가 이벤트로 보이기까지 최대 약 1분 걸립니다.
 - 테스트 대상 컨테이너(`target1/2`)는 같은 이미지에서 만들어져 호스트 키를 공유하고, 컨테이너 안에서는 `dmesg`가 동작하지 않습니다. 그래서 로그 파일 경로만 검증할 수 있습니다.

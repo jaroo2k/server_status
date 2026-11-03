@@ -1,7 +1,8 @@
 # Rules are evaluated in order; the first match wins.
 # Fields: id, title, category (server_error|hardware), severity (critical|warning|info),
 #         pattern (Python regex, case-insensitive), sources (optional list; prefix match,
-#         so "file" matches "file:/var/log/syslog").
+#         so "file" matches "file:/var/log/syslog"), description (optional; what the
+#         event means, shown in the admin dashboard).
 rules:
   # --- hardware: disk ---
   - id: disk.io_error
@@ -9,26 +10,31 @@ rules:
     category: hardware
     severity: critical
     pattern: '(Buffer I/O error|blk_update_request: (I/O|critical) error|I/O error, dev \w+)'
+    description: 디스크에서 데이터를 읽거나 쓰지 못했습니다. 디스크 장애나 케이블 불량일 수 있으며, 데이터 손실로 이어질 수 있습니다.
   - id: disk.ata_error
     title: ATA/SCSI 장치 오류
     category: hardware
     severity: critical
     pattern: '(ata\d+(\.\d+)?: (exception|failed command|status: \{ DRDY ERR)|SCSI error|Medium Error|UNC\b)'
+    description: 디스크 컨트롤러가 장치와 통신하는 중 오류를 보고했습니다. 디스크의 불량 섹터나 케이블, 컨트롤러 문제일 수 있습니다.
   - id: disk.smart
     title: SMART 디스크 경고
     category: hardware
     severity: critical
     pattern: '(smartd.*(FAILED|failing|Prefailure|Currently unreadable|Offline uncorrectable))'
+    description: 디스크 자가 진단(SMART)에서 이상이 감지됐습니다. 디스크 고장이 임박했을 수 있으니 백업과 교체를 검토해야 합니다.
   - id: fs.error
     title: 파일시스템 오류
     category: server_error
     severity: critical
     pattern: '((EXT4|XFS|BTRFS)(-fs)? \(?\w*\)?:? ?(error|corruption|Corruption)|Remounting filesystem read-only)'
+    description: 파일시스템에서 오류나 손상이 감지됐습니다. 보호를 위해 읽기 전용으로 전환되면 해당 디스크에 쓰기가 실패합니다.
   - id: raid.degraded
     title: RAID 성능저하(degraded)
     category: hardware
     severity: critical
     pattern: '(md/raid\d*:.*(degraded|Disk failure)|RAID.*degraded)'
+    description: RAID를 구성하는 디스크 일부가 빠졌습니다. 서비스는 계속될 수 있지만 중복성이 줄어, 디스크가 더 고장 나면 데이터를 잃을 수 있습니다.
 
   # --- hardware: memory / cpu ---
   - id: mem.ecc_uncorrectable
@@ -36,21 +42,25 @@ rules:
     category: hardware
     severity: critical
     pattern: '(EDAC.*\b(UE|uncorrectable)\b|Uncorrected error)'
+    description: 메모리에서 ECC로 고칠 수 없는 오류가 발생했습니다. 데이터 손상이나 시스템 중단으로 이어질 수 있어 메모리 점검이 필요합니다.
   - id: mem.ecc_correctable
     title: 메모리 ECC 정정 오류
     category: hardware
     severity: warning
     pattern: '(EDAC.*\b(CE|corrected)\b|Corrected error)'
+    description: 메모리 오류가 발생했지만 ECC가 자동으로 고쳤습니다. 당장 문제는 없어도 자주 반복되면 메모리 모듈 불량의 징후입니다.
   - id: cpu.mce
     title: CPU Machine Check 오류
     category: hardware
     severity: critical
     pattern: '(Machine check events logged|\bmce: \[Hardware Error\]|\[Hardware Error\])'
+    description: CPU가 하드웨어 오류를 보고했습니다. CPU나 메모리, 메인보드 문제일 수 있으며 시스템이 멈추거나 재부팅될 수 있습니다.
   - id: cpu.thermal
     title: CPU 과열/스로틀링
     category: hardware
     severity: warning
     pattern: '(temperature above threshold|cpu clock throttled|Package temperature)'
+    description: CPU 온도가 임계값을 넘어 클럭을 낮췄습니다. 성능이 떨어질 수 있으니 냉각 팬과 서버실 온도를 확인해야 합니다.
 
   # --- server errors ---
   - id: mem.oom
@@ -58,29 +68,47 @@ rules:
     category: server_error
     severity: critical
     pattern: '(Out of memory|oom-kill|oom_reaper|Killed process \d+)'
+    description: 메모리가 부족해 커널이 프로세스를 강제 종료했습니다. 종료된 프로세스가 맡던 서비스가 중단됐을 수 있습니다.
   - id: kernel.panic
     title: 커널 패닉/버그
     category: server_error
     severity: critical
     pattern: '(Kernel panic|BUG: |general protection fault|soft lockup|hung_task|blocked for more than \d+ seconds)'
+    description: 커널에서 심각한 오류나 작업 지연이 감지됐습니다. 시스템이 멈추거나 재부팅될 수 있으며, 디스크 I/O 지연이 원인일 때도 있습니다.
   - id: proc.segfault
     title: 프로세스 Segfault
     category: server_error
     severity: warning
     pattern: '(segfault at|core dumped)'
+    description: 프로세스가 잘못된 메모리에 접근해 비정상 종료됐습니다. 프로그램 버그일 때가 많고, 반복되면 메모리 불량도 의심해 볼 수 있습니다.
   - id: net.link_down
     title: 네트워크 링크 다운
     category: hardware
     severity: warning
     pattern: '(NIC Link is Down|Link is Down|link down)'
+    description: 네트워크 포트의 연결이 끊어졌습니다. 케이블이나 스위치, 네트워크 카드 문제일 수 있으며 연결이 끊긴 동안 통신이 되지 않습니다.
   - id: service.failed
     title: 서비스 실패
     category: server_error
     severity: warning
     sources: [systemd]
     pattern: '.'
+    description: systemd 서비스가 실패 상태입니다. 해당 서비스가 지금 동작하지 않을 수 있으니 서비스 로그를 확인해야 합니다.
   - id: service.failed_log
     title: 서비스 실패
     category: server_error
     severity: warning
     pattern: '(Failed to start|Main process exited, code=exited, status=[1-9]|entered failed state)'
+    description: 서비스가 시작에 실패했거나 오류 코드로 종료됐습니다. 설정 오류나 의존 서비스 문제일 수 있으니 서비스 로그를 확인해야 합니다.
+  - id: proc.privilege_drop
+    title: 프로세스 권한 전환 실패
+    category: server_error
+    severity: warning
+    pattern: '(Could not set (effective )?[UG]ID=\d+|Unable to change supplementary groups)'
+    description: 프로세스가 설정된 사용자나 그룹으로 권한을 바꾸지 못했습니다. NRPE처럼 이미 일반 사용자로 실행 중인 서비스에서 흔히 나타나며, 서비스의 실행 계정과 설정 파일의 사용자·그룹 설정을 확인해야 합니다.
+  - id: auth.sudo_denied
+    title: sudo 권한 거부
+    category: server_error
+    severity: critical
+    pattern: 'user NOT in sudoers'
+    description: sudoers에 없는 계정이 sudo로 명령을 실행하려다 거부됐습니다. 명령은 실행되지 않았습니다. 본인의 작업이 맞는지 확인하고, 아니라면 계정 도용을 의심해야 합니다.
