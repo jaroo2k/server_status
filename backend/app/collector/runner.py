@@ -27,7 +27,10 @@ from app.collector.ssh_pool import HostKeyChanged, SSHPool, run_command
 from app.collector.tracking import TrackingRunner
 from app.core.config import settings
 from app.core.db import SessionLocal, init_db
-from app.models import CollectorState, Server, SourceStatus, utcnow
+from app.models import CollectorState, Notification, Server, SourceStatus, utcnow
+from app.notifier.alerts import notification_text
+from app.notifier.dispatcher import dispatch_forever, send_pending
+from app.notifier.telegram import TelegramClient
 
 log = logging.getLogger("collector")
 
@@ -79,6 +82,8 @@ class Collector:
             if server is None:
                 return
             now = time.monotonic()
+            previous_status = server.status
+            alerts = []
             try:
                 conn, host_key = await self.pool.get(server)
                 if host_key and not server.host_key:
@@ -124,7 +129,7 @@ class Collector:
                     findings = [
                         f for r in result.records if (f := self.engine.analyze(server.id, r))
                     ]
-                    await upsert_findings(session, server.id, findings)
+                    alerts += await upsert_findings(session, server.id, findings)
                     st.state = result.new_state
                     failure = tracker.failure
                     apply_source_run(
@@ -169,7 +174,23 @@ class Collector:
             server.status = await compute_status(
                 session, server, source_failed=source_error is not None
             )
+            if settings.telegram_enabled:
+                text = notification_text(
+                    server.name, alerts, previous_status, server.status, server.last_error, utcnow()
+                )
+                if text:
+                    session.add(Notification(server_id=server.id, text=text))
             await session.commit()
+
+
+async def _deliver_notifications(client: TelegramClient) -> None:
+    async with SessionLocal() as session:
+        await send_pending(
+            session,
+            client.send,
+            worker_index=settings.worker_index,
+            worker_count=settings.worker_count,
+        )
 
 
 async def main() -> None:
@@ -182,12 +203,23 @@ async def main() -> None:
         settings.worker_count,
         settings.max_concurrency,
     )
+    dispatcher = None
+    if settings.telegram_enabled:
+        client = TelegramClient(settings.telegram_bot_token, settings.telegram_chat_id)
+        dispatcher = asyncio.create_task(
+            dispatch_forever(lambda: _deliver_notifications(client))
+        )
+        log.info("telegram alerts on (min severity: %s)", settings.telegram_min_severity)
+    else:
+        log.info("telegram alerts off (TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID not set)")
     try:
         while True:
             started = time.monotonic()
             await collector.tick()
             await asyncio.sleep(max(1.0, settings.collect_tick_seconds - (time.monotonic() - started)))
     finally:
+        if dispatcher:
+            dispatcher.cancel()
         collector.pool.close_all()
 
 

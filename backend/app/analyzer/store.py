@@ -9,11 +9,32 @@ from app.analyzer.rule_engine import Finding
 from app.collector.sources import sources_for
 from app.core.config import settings
 from app.models import Event, Server, SourceStatus, utcnow
+from app.notifier.alerts import should_alert
 
 
-async def upsert_findings(session: AsyncSession, server_id: int, findings: list[Finding]) -> None:
-    """Insert new findings; repeats bump count/last_seen and re-open acknowledged events."""
+async def upsert_findings(
+    session: AsyncSession, server_id: int, findings: list[Finding]
+) -> list[Finding]:
+    """Insert new findings; repeats bump count/last_seen and re-open acknowledged events.
+    Returns the findings that should alert."""
+    if not findings:
+        return []
+    # fingerprint -> acknowledged, as it was before this batch
+    known = dict(
+        (
+            await session.execute(
+                select(Event.fingerprint, Event.acknowledged).where(
+                    Event.server_id == server_id,
+                    Event.fingerprint.in_({f.fingerprint for f in findings}),
+                )
+            )
+        ).all()
+    )
+    alerts = []
     for f in findings:
+        if should_alert(f.severity, known.get(f.fingerprint), settings.telegram_min_severity):
+            alerts.append(f)
+        known[f.fingerprint] = False  # open from here on, whether it alerted or not
         seen = f.record.ts or utcnow()
         stmt = insert(Event).values(
             server_id=server_id,
@@ -39,6 +60,7 @@ async def upsert_findings(session: AsyncSession, server_id: int, findings: list[
             },
         )
         await session.execute(stmt)
+    return alerts
 
 
 def decide_status(consecutive_failures: int, severity_counts: dict, source_failed: bool) -> str:

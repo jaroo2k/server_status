@@ -189,6 +189,18 @@ docker compose --profile test down -v   # DB 데이터까지 삭제
 | `UNREACHABLE_AFTER_FAILURES` | `3` | 몇 번 연속 실패하면 `unreachable`로 볼지 |
 | `STATUS_WINDOW_HOURS` | `24` | 서버 상태 계산에 반영할 이벤트 기간(시간) |
 | `WORKER_INDEX` / `WORKER_COUNT` | `0` / `1` | collector 샤딩 설정 |
+| `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` | (없음) | 텔레그램 알림 봇 토큰과 채팅 ID. 둘 다 있어야 알림이 켜집니다. |
+| `TELEGRAM_MIN_SEVERITY` | `critical` | 알림을 보낼 최소 심각도 (`critical`, `warning`, `info`) |
+
+### 텔레그램 알림
+
+알림은 다음 경우에 보냅니다.
+
+- 설정한 심각도 이상의 이벤트가 새로 발생했을 때
+- 확인 처리한 이벤트가 다시 발생했을 때 (확인 전의 반복 발생은 보내지 않습니다)
+- 서버가 `unreachable`이 되었을 때와 거기서 복구되었을 때
+
+보낼 알림은 `notifications` 테이블에 먼저 저장되므로, 텔레그램 장애나 collector 재시작 후에도 이어서 전송됩니다. collector가 꺼져 있는 동안에는 알림도 오지 않으며, 꺼졌다는 사실도 알려주지 않습니다.
 
 ### 수평 확장
 
@@ -201,6 +213,8 @@ cd backend
 pip install -r requirements-dev.txt
 pytest
 ```
+
+`tests/test_notifier_db.py`는 실제 PostgreSQL이 필요해서 `TEST_DATABASE_URL`이 있을 때만 실행됩니다. **이 테스트는 테이블을 모두 삭제하므로** 이름에 `test`가 들어간 일회용 DB를 지정하세요.
 
 ## 알려진 제약
 
