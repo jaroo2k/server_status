@@ -10,6 +10,8 @@ from app.schemas import EventOut, OccurrenceOut, OccurrencePage, Summary
 
 router = APIRouter(prefix="/api", tags=["events"])
 
+TOTAL_CAP = 10_000
+
 
 @router.get("/events", response_model=list[EventOut])
 async def list_events(
@@ -84,12 +86,16 @@ async def list_occurrences(
     if to is not None:
         filters.append(EventOccurrence.seen_at < to)
 
-    total = await session.scalar(
-        select(func.count())
-        .select_from(EventOccurrence)
+    # The dashboard asks every 10s and the table is never pruned, so never count all of it.
+    count_limit = offset + TOTAL_CAP + 1
+    matching = (
+        select(EventOccurrence.id)
         .join(Event, Event.id == EventOccurrence.event_id)
         .where(*filters)
+        .limit(count_limit)
+        .subquery()
     )
+    count = await session.scalar(select(func.count()).select_from(matching))
     rows = await session.execute(
         select(EventOccurrence, Event, Server.name)
         .join(Event, Event.id == EventOccurrence.event_id)
@@ -100,7 +106,8 @@ async def list_occurrences(
         .offset(offset)
     )
     return OccurrencePage(
-        total=total,
+        total=min(count, count_limit - 1),
+        total_capped=count == count_limit,
         items=[
             OccurrenceOut(
                 id=line.id,

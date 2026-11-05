@@ -21,13 +21,15 @@ pytestmark = pytest.mark.skipif(
 T = datetime(2026, 11, 2, 5, 30, tzinfo=timezone.utc)
 
 
-def finding(message, ts=T, fingerprint="fp-1", rule_id="disk.io_error", severity="warning"):
+def finding(
+    message, ts=T, fingerprint="fp-1", rule_id="disk.io_error", severity="warning", source="journal"
+):
     return SimpleNamespace(
         rule_id=rule_id,
         title=f"제목-{fingerprint}",
         category="hardware",
         severity=severity,
-        source="journal",
+        source=source,
         message=message,
         fingerprint=fingerprint,
         record=SimpleNamespace(ts=ts),
@@ -98,6 +100,30 @@ def test_every_line_is_kept_however_often_an_event_repeats():
 
             assert result.total == 54
             assert result.items[-1].message == "line 0"
+
+    with_db(test)
+
+
+def test_still_failed_unit_keeps_a_line_only_when_new_or_reopened():
+    async def test(sessions):
+        async with sessions() as s:
+            await add_server(s)
+
+            async def report(minute, repeats=1):
+                unit = finding(f"run {minute}", T + timedelta(minutes=minute), source="systemd")
+                await upsert_findings(s, 1, [unit] * repeats)
+
+            await report(0, repeats=2)  # new, then still failed in the same batch
+            await report(1)  # still failed
+            ev = await s.scalar(select(Event))
+            ev.acknowledged = True
+            await s.flush()
+            await report(2)  # reopened
+            await report(3)  # still failed
+
+            assert await lines(s) == ["run 2", "run 0"]
+            await s.refresh(ev)
+            assert ev.count == 5
 
     with_db(test)
 
@@ -218,6 +244,32 @@ def test_pages_do_not_overlap_and_total_counts_all_matches():
             assert [o.message for o in second.items] == ["line 2", "line 1"]
             assert first.total == 5
             assert filtered.total == 2
+
+    with_db(test)
+
+
+def test_total_stops_counting_at_the_cap_but_next_page_stays_reachable(monkeypatch):
+    monkeypatch.setattr("app.api.events.TOTAL_CAP", 3)
+
+    async def test(sessions):
+        async with sessions() as s:
+            await add_server(s)
+            await upsert_findings(
+                s, 1, [finding(f"line {i}", T + timedelta(seconds=i)) for i in range(6)]
+            )
+
+            first = await page(s, limit=2)
+            assert (first.total, first.total_capped) == (3, True)
+
+            # deeper pages count further, so "shown < total" still finds the next page
+            deeper = await page(s, limit=2, offset=2)
+            assert (deeper.total, deeper.total_capped) == (5, True)
+            last = await page(s, limit=2, offset=4)
+            assert (last.total, last.total_capped) == (6, False)
+
+            # exactly at the cap is an exact count
+            monkeypatch.setattr("app.api.events.TOTAL_CAP", 6)
+            assert (await page(s)).total_capped is False
 
     with_db(test)
 

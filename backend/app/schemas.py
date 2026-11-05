@@ -91,9 +91,11 @@ class OccurrenceOut(BaseModel):
 
 
 class OccurrencePage(BaseModel):
-    """`total` counts every line matching the filters, not just this page."""
+    """`total` counts lines matching the filters, not just this page. If `total_capped`,
+    counting stopped there and more lines match."""
 
     total: int
+    total_capped: bool
     items: list[OccurrenceOut]
 
 

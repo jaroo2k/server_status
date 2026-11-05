@@ -89,6 +89,7 @@ curl localhost:8000/healthz
   - 메시지 칸에는 로그의 의미(규칙별 고정 설명)와 원본 로그가 함께 표시됩니다.
   - 메시지를 누르면 상세 창에서 이벤트 정보와 발생 이력을 보고 원본 로그를 복사할 수 있습니다. 이력은 날짜로 검색할 수 있습니다.
 - **발생 이력**: 모든 이벤트의 원본 로그를 최신순으로 보여주며, 서버, 심각도, 이벤트, 날짜(브라우저 시간대 기준)로 검색할 수 있습니다. 로그를 누르면 해당 이벤트의 상세 창이 열립니다.
+  - `systemd` 소스는 실패 상태를 수집할 때마다 다시 보고하므로, 이벤트가 새로 생기거나 다시 열릴 때만 이력에 저장합니다.
 - 10초마다 자동으로 새로고침합니다(체크박스로 끌 수 있음).
 - 다크 모드를 지원합니다.
 
@@ -144,7 +145,7 @@ docker compose --profile test down -v   # DB 데이터까지 삭제
 | POST | `/api/servers/{id}/reset-host-key` | 고정된 호스트 키 해제 |
 | GET | `/api/events` | 이벤트 조회 (`server_id`, `severity`, `category`, `acknowledged`, `since`, `q`, `limit`, `offset` 필터) |
 | GET | `/api/events/{id}` | 이벤트 하나 조회 |
-| GET | `/api/occurrences` | 발생 이력 조회, 최신순 (`server_id`, `event_id`, `severity`, `from`(포함), `to`(미포함), `limit`, `offset`). 조건에 맞는 전체 건수 `total`을 함께 반환 |
+| GET | `/api/occurrences` | 발생 이력 조회, 최신순 (`server_id`, `event_id`, `severity`, `from`(포함), `to`(미포함), `limit`, `offset`). 조건에 맞는 건수 `total`을 함께 반환. `offset`에서 10,000건을 넘으면 세기를 멈추고 `total_capped`가 `true` |
 | POST | `/api/events/{id}/ack` | 이벤트 확인 처리 |
 | GET | `/api/summary` | 서버 상태별 개수, 미확인 이벤트 심각도·카테고리별 개수 |
 | GET | `/healthz` | 헬스 체크 |

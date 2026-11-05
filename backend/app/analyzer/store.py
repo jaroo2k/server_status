@@ -34,6 +34,7 @@ async def upsert_findings(
     for f in findings:
         if should_alert(f.severity, known.get(f.fingerprint), settings.telegram_min_severity):
             alerts.append(f)
+        was_open = known.get(f.fingerprint) is False
         known[f.fingerprint] = False  # open from here on, whether it alerted or not
         seen = f.record.ts or utcnow()
         stmt = insert(Event).values(
@@ -60,9 +61,11 @@ async def upsert_findings(
             },
         ).returning(Event.id)
         event_id = (await session.execute(stmt)).scalar_one()
-        await session.execute(
-            insert(EventOccurrence).values(event_id=event_id, message=f.message, seen_at=seen)
-        )
+        # systemd re-reports a still-failed unit every run: that is a state, not a new log line.
+        if f.source != "systemd" or not was_open:
+            await session.execute(
+                insert(EventOccurrence).values(event_id=event_id, message=f.message, seen_at=seen)
+            )
     return alerts
 
 

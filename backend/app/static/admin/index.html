@@ -624,9 +624,13 @@ function appendLines(lines, page) {
   return lines.concat(page.filter((l) => !seen.has(l.id)));
 }
 
-function moreBar(shown, total, moreId) {
-  return shown < total
-    ? `<span class="small muted">${total.toLocaleString()}건 중 ${shown.toLocaleString()}건 표시</span><button type="button" id="${moreId}">더 보기</button>`
+function totalLabel(page) {
+  return `${page.total.toLocaleString()}건${page.total_capped ? " 이상" : ""}`;
+}
+
+function moreBar(shown, page, moreId) {
+  return shown < page.total
+    ? `<span class="small muted">${totalLabel(page)} 중 ${shown.toLocaleString()}건 표시</span><button type="button" id="${moreId}">더 보기</button>`
     : "";
 }
 
@@ -672,7 +676,7 @@ async function loadHistory({ more = false } = {}) {
       <td>${esc(line.title)}<br><span class="small muted">${esc(line.rule_id)}</span></td>
       <td><button type="button" class="event-msg" data-act="detail" title="클릭하여 이벤트 상세 보기"><span class="msg">${esc(line.message)}</span></button></td>
     </tr>`).join("") || `<tr><td colspan="5" class="empty">조건에 맞는 이력이 없습니다.</td></tr>`;
-  $("#history-more").innerHTML = moreBar(historyLines.length, page.total, "history-load-more");
+  $("#history-more").innerHTML = moreBar(historyLines.length, page, "history-load-more");
 }
 
 $("#history").addEventListener("click", async (e) => {
@@ -729,11 +733,13 @@ async function loadDetailLines({ more = false } = {}) {
     } else {
       detailLines = more ? appendLines(detailLines, page.items) : page.items;
       $("#event-note").textContent = filtered
-        ? `조회 결과 ${page.total.toLocaleString()}건`
-        : page.total < ev.count
-          ? `전체 ${ev.count.toLocaleString()}회 중 원본 로그 ${page.total.toLocaleString()}건이 보관되어 있습니다. 나머지는 이력 저장 전에 발생했거나 지워져 볼 수 없습니다.`
-          : "";
-      $("#event-more").innerHTML = moreBar(detailLines.length, page.total, "event-load-more");
+        ? `조회 결과 ${totalLabel(page)}`
+        : page.total_capped || page.total >= ev.count
+          ? ""
+          : ev.source === "systemd"
+            ? `전체 ${ev.count.toLocaleString()}회 확인 중 ${page.total.toLocaleString()}건만 보관되어 있습니다. 실패 상태가 이어지는 동안의 반복 확인은 저장하지 않습니다.`
+            : `전체 ${ev.count.toLocaleString()}회 중 원본 로그 ${page.total.toLocaleString()}건이 보관되어 있습니다. 나머지는 이력 저장 전에 발생했거나 지워져 볼 수 없습니다.`;
+      $("#event-more").innerHTML = moreBar(detailLines.length, page, "event-load-more");
     }
     renderEventLines();
   } catch (err) {
