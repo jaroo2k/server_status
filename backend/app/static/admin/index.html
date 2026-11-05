@@ -3,12 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>서버 모니터 관리자</title>
+<title>서버 모니터링 관리</title>
 <style>
   :root {
     color-scheme: light dark;
     --bg: #f5f6f8; --panel: #fff; --text: #1d2127; --muted: #6b7280; --border: #e3e6ea;
     --accent: #2563eb; --accent-text: #fff; --hover: #f0f2f5;
+    --mint: #2dd4bf; --mint-hover: #5eead4; --mint-text: #063b35;
     --ok: #15803d; --ok-bg: #dcfce7; --warn: #a16207; --warn-bg: #fef3c7;
     --crit: #b91c1c; --crit-bg: #fee2e2; --gray: #4b5563; --gray-bg: #e5e7eb;
   }
@@ -73,6 +74,8 @@
   button:hover { background: var(--hover); }
   button:disabled { opacity: .5; cursor: default; }
   button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+  button.mint { background: var(--mint); border-color: var(--mint); color: var(--mint-text); }
+  button.mint:hover { background: var(--mint-hover); border-color: var(--mint-hover); }
   button.danger { color: var(--crit); }
   button.sm { padding: 2px 8px; font-size: 12px; }
   select, input, textarea { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; }
@@ -128,7 +131,7 @@
 </head>
 <body>
 <header>
-  <h1>서버 모니터 관리자</h1>
+  <h1>서버 모니터링 관리</h1>
   <span class="muted small" id="updated"></span>
   <label class="inline"><input type="checkbox" id="auto" checked> 10초마다 자동 새로고침</label>
   <button id="refresh">새로고침</button>
@@ -140,12 +143,12 @@
   <section>
     <div class="section-head">
       <h2>서버</h2>
-      <button class="primary" id="add-server">+ 서버 추가</button>
+      <button class="mint" id="add-server">+ 서버 추가</button>
     </div>
     <div class="table-wrap">
       <table>
         <thead><tr>
-          <th>이름</th><th>주소</th><th>상태</th><th>태그</th><th>수집 소스</th>
+          <th>이름</th><th>주소</th><th>상태</th><th>태그</th>
           <th>마지막 수집</th><th>오류</th><th>작업</th>
         </tr></thead>
         <tbody id="servers"></tbody>
@@ -356,7 +359,7 @@ function renderServers() {
   const selected = $("#f-server").value;
   const tbody = $("#servers");
   if (!servers.length) {
-    tbody.innerHTML = `<tr><td colspan="8" class="empty">등록된 서버가 없습니다. "서버 추가"로 등록하세요.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="empty">등록된 서버가 없습니다. "서버 추가"로 등록하세요.</td></tr>`;
   } else {
     tbody.innerHTML = servers.map((s) => `
       <tr data-id="${s.id}" class="${String(s.id) === selected ? "selected" : ""}">
@@ -364,7 +367,6 @@ function renderServers() {
         <td>${esc(s.username)}@${esc(s.host)}:${s.port}<br><span class="small muted">${s.auth_type === "key" ? "키 인증" : "비밀번호"}${s.host_key_pinned ? " · 호스트 키 고정됨" : ""}</span></td>
         <td>${statusBadge(s)}</td>
         <td>${s.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("") || '<span class="muted">-</span>'}</td>
-        <td class="small">${s.capabilities.map(esc).join("<br>") || '<span class="muted">미탐지</span>'}</td>
         <td>${fmtTime(s.last_collected_at)}</td>
         <td>${s.last_error ? `<div class="err">${esc(s.last_error)}</div>${s.consecutive_failures ? `<span class="small muted">연속 실패 ${s.consecutive_failures}회</span>` : ""}` : '<span class="muted">-</span>'}</td>
         <td class="actions">
